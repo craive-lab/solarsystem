@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.ebremer</groupId>
+  <artifactId>solarsystem</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <name>solarsystem</name>
+  <description>Three.js solar system with spatial audio and an OSC-over-WebSocket to UDP bridge</description>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>21</maven.compiler.release>
+    <jetty.version>12.0.25</jetty.version>
+    <mainClass>com.ebremer.solarsystem.SolarSystemServer</mainClass>
+    <native.maven.plugin.version>0.11.0</native.maven.plugin.version>
+  </properties>
+
+  <dependencies>
+    <!-- Servlet container (Jakarta Servlet 6.0 via Jetty 12 ee10) -->
+    <dependency>
+      <groupId>org.eclipse.jetty.ee10</groupId>
+      <artifactId>jetty-ee10-servlet</artifactId>
+      <version>${jetty.version}</version>
+    </dependency>
+
+    <!-- JSR-356 (jakarta.websocket) server endpoint support -->
+    <dependency>
+      <groupId>org.eclipse.jetty.ee10.websocket</groupId>
+      <artifactId>jetty-ee10-websocket-jakarta-server</artifactId>
+      <version>${jetty.version}</version>
+    </dependency>
+
+    <!-- Console logging for Jetty's slf4j-api calls -->
+    <dependency>
+      <groupId>org.eclipse.jetty</groupId>
+      <artifactId>jetty-slf4j-impl</artifactId>
+      <version>${jetty.version}</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>solarsystem</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.2</version>
+        <configuration>
+          <archive>
+            <manifest>
+              <mainClass>${mainClass}</mainClass>
+            </manifest>
+          </archive>
+        </configuration>
+      </plugin>
+
+      <!-- Single runnable jar: java -jar target/solarsystem.jar -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals><goal>shade</goal></goals>
+            <configuration>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>${mainClass}</mainClass>
+                </transformer>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                    <exclude>module-info.class</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!--
+      Ahead-of-time compiled executable:
+
+          mvn -Pnative package        ->  target/solarsystem.exe   (target/solarsystem on unix)
+
+      Needs a GraalVM JDK with native-image installed, and on Windows an MSVC toolchain
+      (Visual Studio with "Desktop development with C++"). The build takes a few minutes
+      and a couple of GB of RAM; the ordinary `mvn package` jar is unaffected.
+
+      Jetty resolves its JSR-356 WebSocket endpoint and several service providers by
+      reflection, which the closed-world analysis cannot see. The metadata under
+      src/main/resources/META-INF/native-image/ supplies it: com.ebremer/solarsystem/ was
+      produced by the tracing agent against a real run, com.ebremer/solarsystem-webapp/ is
+      the hand-written glob that embeds the web app.
+    -->
+    <profile>
+      <id>native</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.graalvm.buildtools</groupId>
+            <artifactId>native-maven-plugin</artifactId>
+            <version>${native.maven.plugin.version}</version>
+            <extensions>true</extensions>
+            <executions>
+              <execution>
+                <id>build-native</id>
+                <phase>package</phase>
+                <goals><goal>compile-no-fork</goal></goals>
+              </execution>
+            </executions>
+            <configuration>
+              <imageName>solarsystem</imageName>
+              <mainClass>${mainClass}</mainClass>
+              <!-- Fail loudly rather than silently emitting a JVM-dependent fallback image. -->
+              <fallback>false</fallback>
+              <buildArgs>
+                <buildArg>-H:+ReportExceptionStackTraces</buildArg>
+                <!--
+                  Deliberately no monitoring flags: enabling them makes native-image emit
+                  management_ext.dll beside the executable, and one self-contained file is
+                  worth more here than heap dumps.
+
+                  A static file server and a UDP relay need very little memory. Without a
+                  cap the default is 80% of physical RAM, which looks alarming in a task
+                  manager sitting next to a DAW.
+                -->
+                <buildArg>-R:MaxHeapSize=256m</buildArg>
+              </buildArgs>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

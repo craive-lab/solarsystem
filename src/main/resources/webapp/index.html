@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Solar System &middot; spatial audio &amp; OSC</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='7' fill='%23ffc648'/><circle cx='28' cy='16' r='2.5' fill='%234d8fe0'/></svg>">
+</head>
+<body>
+
+<canvas id="scene"></canvas>
+
+<!-- Browsers refuse to start an AudioContext without a gesture, so we ask for one. -->
+<div id="gate">
+  <div class="gate-card">
+    <h1>Solar System</h1>
+    <p class="sub">Nine bodies, nine voices, one listener.</p>
+    <p class="blurb">
+      Each body sings a tone of its own. Click any of them to move the audio listener
+      onto it and hear the rest of the system from there, spatialised with HRTF panning.
+      Position, azimuth, elevation and gain stream out as OSC the whole time.
+    </p>
+    <button id="gate-start" class="primary">Start with sound</button>
+    <button id="gate-silent" class="ghost">Explore silently</button>
+    <p class="fineprint">Headphones strongly recommended &mdash; HRTF panning needs two ears.</p>
+  </div>
+</div>
+
+<!-- Left: pick the body you listen from, with its live bearing from where you stand. -->
+<aside id="left-panel" class="panel">
+  <h2>Listen from</h2>
+  <ul id="body-list"></ul>
+  <p class="legend"><span class="k">az</span> bearing &middot; <span class="k">el</span> elevation &middot; bar is gain</p>
+</aside>
+
+<aside id="right-panel">
+
+  <section class="panel">
+    <h2>Sound field</h2>
+    <div id="here">
+      <span id="here-swatch" class="swatch"></span>
+      <div>
+        <strong id="here-name">Earth</strong>
+        <span id="here-note">A4 &middot; 440.00 Hz</span>
+      </div>
+    </div>
+    <canvas id="radar"></canvas>
+    <p id="here-timbre" class="timbre"></p>
+    <p id="here-facts" class="facts"></p>
+  </section>
+
+  <section class="panel">
+    <h2>Time</h2>
+    <div class="row">
+      <button id="btn-pause" class="wide">Pause</button>
+      <button id="btn-now">Now</button>
+    </div>
+    <label class="ctl">
+      <span>Rate <output id="out-speed">8.0 d/s</output></span>
+      <input id="in-speed" type="range" min="0" max="1000" value="583">
+    </label>
+    <label class="ctl">
+      <span>Orbit tilt <output id="out-tilt">1.0&times;</output></span>
+      <input id="in-tilt" type="range" min="10" max="80" value="10">
+    </label>
+    <p class="readout"><span id="out-date">&mdash;</span> &middot; JD <span id="out-jd">&mdash;</span></p>
+  </section>
+
+  <section class="panel">
+    <h2>Audio</h2>
+    <label class="ctl">
+      <span>Volume <output id="out-volume">80%</output></span>
+      <input id="in-volume" type="range" min="0" max="100" value="80">
+    </label>
+    <label class="check"><input id="in-doppler" type="checkbox" checked> Doppler shift</label>
+    <label class="check"><input id="in-heading" type="checkbox" checked> Face direction of travel</label>
+    <label class="check"><input id="in-labels" type="checkbox" checked> Labels and orbits</label>
+    <button id="btn-audio" class="wide">Start audio</button>
+  </section>
+
+  <section class="panel">
+    <h2>OSC <span id="osc-dot" class="dot"></span></h2>
+    <p id="osc-status" class="readout">connecting&hellip;</p>
+    <label class="field" for="in-ws-url">WebSocket</label>
+    <div class="row">
+      <input id="in-ws-url" type="text" spellcheck="false" placeholder="ws://host:port/path">
+      <button id="btn-ws-apply">Go</button>
+    </div>
+    <div id="osc-dest">
+      <label class="field" for="in-osc-host">Relay sends UDP to</label>
+      <div class="row">
+        <input id="in-osc-host" type="text" spellcheck="false" placeholder="127.0.0.1">
+        <input id="in-osc-port" type="number" min="1" max="65535" placeholder="57120">
+        <button id="btn-osc-apply">Set</button>
+      </div>
+    </div>
+    <label class="ctl">
+      <span>Send rate <output id="out-osc-rate">30 Hz</output></span>
+      <input id="in-osc-rate" type="range" min="0" max="60" value="30">
+    </label>
+    <p id="osc-stats" class="readout">&mdash;</p>
+  </section>
+
+</aside>
+
+<div id="hint">drag to orbit &middot; scroll to zoom &middot; click a body to listen from it &middot; 1-9 to jump</div>
+<div id="tooltip" hidden></div>
+
+<!-- osc.js ships as a classic script and exposes the global `osc`. -->
+<script src="vendor/osc-browser.min.js"></script>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js",
+    "three/addons/": "./vendor/"
+  }
+}
+</script>
+<script type="module" src="js/main.js"></script>
+
+</body>
+</html>
