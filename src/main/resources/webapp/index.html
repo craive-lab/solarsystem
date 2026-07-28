@@ -82,18 +82,10 @@
   <section class="panel">
     <h2>OSC <span id="osc-dot" class="dot"></span></h2>
     <p id="osc-status" class="readout">connecting&hellip;</p>
-    <label class="field" for="in-ws-url">WebSocket</label>
+    <label class="field" for="in-ws-url">WebSocket server</label>
     <div class="row">
-      <input id="in-ws-url" type="text" spellcheck="false" placeholder="ws://host:port/path">
+      <input id="in-ws-url" type="text" spellcheck="false" placeholder="ws://localhost:8888/osc">
       <button id="btn-ws-apply">Go</button>
-    </div>
-    <div id="osc-dest">
-      <label class="field" for="in-osc-host">Relay sends UDP to</label>
-      <div class="row">
-        <input id="in-osc-host" type="text" spellcheck="false" placeholder="127.0.0.1">
-        <input id="in-osc-port" type="number" min="1" max="65535" placeholder="57120">
-        <button id="btn-osc-apply">Set</button>
-      </div>
     </div>
     <label class="ctl">
       <span>Send rate <output id="out-osc-rate">30 Hz</output></span>

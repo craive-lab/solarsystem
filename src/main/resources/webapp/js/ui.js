@@ -128,19 +128,11 @@ export class UI {
       h.onOscRate(hz);
     });
 
-    $('btn-osc-apply').addEventListener('click', () => {
-      h.onOscTarget($('in-osc-host').value.trim(), +$('in-osc-port').value);
-    });
-    for (const id of ['in-osc-host', 'in-osc-port']) {
-      $(id).addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') h.onOscTarget($('in-osc-host').value.trim(), +$('in-osc-port').value);
-      });
-    }
-
     const applyWsUrl = () => {
       const url = $('in-ws-url').value.trim();
-      // Emptying the box drops the override and goes back to whatever the server offers.
-      rememberWsUrl(url === (this.oscConfig?.wsUrl ?? '') ? '' : url);
+      // Matching what the server already offers is not an override, so do not store it;
+      // that also means emptying the box reverts to the server's --ws-url.
+      rememberWsUrl(url === (this.serverWsUrl ?? '') ? '' : url);
       h.onWsUrl(url);
     };
     $('btn-ws-apply').addEventListener('click', applyWsUrl);
@@ -184,44 +176,15 @@ export class UI {
     $('btn-pause').textContent = paused ? 'Resume' : 'Pause';
   }
 
-  /**
-   * Reflects the server's view of the bridge into the OSC panel. When the server runs no
-   * relay the UDP destination controls are hidden outright rather than left showing
-   * values that nothing acts on.
-   */
-  setOscConfig(config, activeWsUrl) {
-    if (!config) return;
-    this.oscConfig = config;
-    const relay = config.websocket !== false;
-
-    $('osc-dest').hidden = !relay;
-    if (relay) {
-      if (document.activeElement !== $('in-osc-host')) $('in-osc-host').value = config.oscHost;
-      if (document.activeElement !== $('in-osc-port')) $('in-osc-port').value = config.oscPort;
-      $('in-osc-host').disabled = !config.allowRetarget;
-      $('in-osc-port').disabled = !config.allowRetarget;
-      $('btn-osc-apply').disabled = !config.allowRetarget;
-    }
-
-    if (activeWsUrl !== undefined) {
-      this.activeWsUrl = activeWsUrl;
-      if (document.activeElement !== $('in-ws-url')) $('in-ws-url').value = activeWsUrl || '';
-    }
+  /** Remembers the URL this server suggests, which the page can fall back to. */
+  setServerWsUrl(url) {
+    this.serverWsUrl = url || '';
   }
 
-  /** Records where osc.js is actually pointed, which decides what the status can claim. */
+  /** Records where osc.js is actually pointed. */
   setActiveWsUrl(url) {
     this.activeWsUrl = url;
     if (document.activeElement !== $('in-ws-url')) $('in-ws-url').value = url || '';
-  }
-
-  /**
-   * True only when the socket is aimed at this server's own relay. Anywhere else and the
-   * page has no idea what happens to the packets, so it must not claim a UDP destination.
-   */
-  #onLocalRelay() {
-    const relayUrl = this.oscConfig && this.oscConfig.relayUrl;
-    return Boolean(relayUrl) && this.activeWsUrl === relayUrl;
   }
 
   setOscState(state, detail) {
@@ -230,27 +193,22 @@ export class UI {
       connected: 'ok', connecting: 'warn', reconnecting: 'warn', error: 'bad', idle: ''
     }[state] ?? '');
 
-    const local = this.#onLocalRelay();
-    const connected = local
-      ? `relaying to udp ${this.oscConfig.oscHost}:${this.oscConfig.oscPort}`
-      : 'connected to an external bridge';
     const text = {
-      connected,
+      connected: 'sending to ' + (this.activeWsUrl || 'the bridge'),
       connecting: 'opening WebSocket…',
       reconnecting: 'reconnecting…',
       error: 'error',
-      idle: this.activeWsUrl ? 'not connected' : 'set a WebSocket URL above'
+      idle: this.activeWsUrl ? 'not connected' : 'set a WebSocket server above'
     }[state] ?? state;
     $('osc-status').textContent = detail ? `${text} — ${detail}` : text;
   }
 
-  setOscStats(sent, stats) {
-    // The relay's counters only describe this page's traffic when this page is the one
-    // using it; otherwise report just what we sent.
-    if (!stats || !this.#onLocalRelay()) { $('osc-stats').textContent = `${sent} bundles sent`; return; }
-    const kb = (stats.bytesOut / 1024).toFixed(0);
-    $('osc-stats').textContent =
-      `${sent} bundles · ${stats.packetsOut} udp out (${kb} KB) · ${stats.packetsIn} in`;
+  /**
+   * Only the page's own send count is available. What happens after the bridge receives a
+   * bundle is not something this page can see.
+   */
+  setOscStats(sent) {
+    $('osc-stats').textContent = `${sent} bundles sent`;
   }
 
   /** Per-frame readouts. Kept to text writes so it stays cheap at 60 fps. */

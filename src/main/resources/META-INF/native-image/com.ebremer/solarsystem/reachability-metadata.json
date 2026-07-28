@@ -13,43 +13,6 @@
       ]
     },
     {
-      "type": "jakarta.websocket.Endpoint",
-      "methods": [
-        {
-          "name": "onClose",
-          "parameterTypes": [
-            "jakarta.websocket.Session",
-            "jakarta.websocket.CloseReason"
-          ]
-        },
-        {
-          "name": "onError",
-          "parameterTypes": [
-            "jakarta.websocket.Session",
-            "java.lang.Throwable"
-          ]
-        },
-        {
-          "name": "onOpen",
-          "parameterTypes": [
-            "jakarta.websocket.Session",
-            "jakarta.websocket.EndpointConfig"
-          ]
-        }
-      ]
-    },
-    {
-      "type": "jakarta.websocket.MessageHandler$Whole",
-      "methods": [
-        {
-          "name": "onMessage",
-          "parameterTypes": [
-            "java.lang.Object"
-          ]
-        }
-      ]
-    },
-    {
       "type": "java.lang.Boolean",
       "jniAccessible": true,
       "methods": [
@@ -144,79 +107,6 @@
       ]
     },
     {
-      "type": "org.eclipse.jetty.ee10.servlet.FilterHolder[]"
-    },
-    {
-      "type": "org.eclipse.jetty.ee10.websocket.jakarta.common.JakartaWebSocketSession",
-      "methods": [
-        {
-          "name": "filterReturnType",
-          "parameterTypes": [
-            "java.lang.Object"
-          ]
-        }
-      ]
-    },
-    {
-      "type": "org.eclipse.jetty.ee10.websocket.jakarta.common.decoders.ByteBufferDecoder",
-      "methods": [
-        {
-          "name": "<init>",
-          "parameterTypes": []
-        }
-      ]
-    },
-    {
-      "type": "org.eclipse.jetty.ee10.websocket.jakarta.common.decoders.StringDecoder",
-      "methods": [
-        {
-          "name": "<init>",
-          "parameterTypes": []
-        }
-      ]
-    },
-    {
-      "type": "org.eclipse.jetty.ee10.websocket.jakarta.common.messages.DecodedBinaryMessageSink",
-      "methods": [
-        {
-          "name": "<init>",
-          "parameterTypes": [
-            "org.eclipse.jetty.websocket.core.CoreSession",
-            "java.lang.invoke.MethodHandle",
-            "java.util.List"
-          ]
-        },
-        {
-          "name": "onWholeMessage",
-          "parameterTypes": [
-            "java.nio.ByteBuffer"
-          ]
-        }
-      ]
-    },
-    {
-      "type": "org.eclipse.jetty.ee10.websocket.jakarta.common.messages.DecodedTextMessageSink",
-      "methods": [
-        {
-          "name": "<init>",
-          "parameterTypes": [
-            "org.eclipse.jetty.websocket.core.CoreSession",
-            "java.lang.invoke.MethodHandle",
-            "java.util.List"
-          ]
-        },
-        {
-          "name": "onMessage",
-          "parameterTypes": [
-            "java.lang.String"
-          ]
-        }
-      ]
-    },
-    {
-      "type": "org.eclipse.jetty.ee10.websocket.jakarta.server.config.ContainerDefaultConfigurator"
-    },
-    {
       "type": "org.eclipse.jetty.http.Http10FieldPreEncoder"
     },
     {
@@ -270,27 +160,6 @@
           "parameterTypes": []
         }
       ]
-    },
-    {
-      "type": "org.eclipse.jetty.websocket.core.internal.FragmentExtension"
-    },
-    {
-      "type": "org.eclipse.jetty.websocket.core.internal.FrameCaptureExtension"
-    },
-    {
-      "type": "org.eclipse.jetty.websocket.core.internal.IdentityExtension"
-    },
-    {
-      "type": "org.eclipse.jetty.websocket.core.internal.PerMessageDeflateExtension",
-      "methods": [
-        {
-          "name": "<init>",
-          "parameterTypes": []
-        }
-      ]
-    },
-    {
-      "type": "org.eclipse.jetty.websocket.core.internal.ValidationExtension"
     },
     {
       "type": "sun.launcher.LauncherHelper",
@@ -384,12 +253,6 @@
   ],
   "resources": [
     {
-      "glob": "META-INF/services/jakarta.websocket.server.ServerEndpointConfig$Configurator"
-    },
-    {
-      "glob": "META-INF/services/java.net.spi.InetAddressResolverProvider"
-    },
-    {
       "glob": "META-INF/services/java.nio.channels.spi.SelectorProvider"
     },
     {
@@ -400,9 +263,6 @@
     },
     {
       "glob": "META-INF/services/org.eclipse.jetty.http.HttpFieldPreEncoder"
-    },
-    {
-      "glob": "META-INF/services/org.eclipse.jetty.websocket.core.Extension"
     },
     {
       "glob": "META-INF/services/org.slf4j.spi.SLF4JServiceProvider"

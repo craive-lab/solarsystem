@@ -9,34 +9,31 @@ Everything the listener hears — positions, bearings, elevations, gains — str
 OSC at up to 60 Hz, so a patch in SuperCollider, Max, Pd, TouchDesigner or anything else
 can play along.
 
-A small Jetty server hosts the page and bridges the OSC to UDP.
+A small Jetty server hosts the page. That is all it does — it runs no OSC machinery of its
+own. The page opens a WebSocket straight to a bridge you provide, named by `--ws-url`.
 
 ```
-┌─────────────────────────────────────┐
-│ browser                             │
-│   three.js      orbits and picking  │
-│   Web Audio     9 voices + HRTF     │
-│   osc.js        encodes OSC packets │
-└───────────────┬─────────────────────┘
+┌─────────────────────────────────────┐      ┌──────────────────────────┐
+│ browser                             │      │ Jetty 12                 │
+│   three.js      orbits and picking  │◄─────┤   StaticServlet  the app │
+│   Web Audio     9 voices + HRTF     │ http │   ConfigServlet  --ws-url│
+│   osc.js        encodes OSC packets │      └──────────────────────────┘
+└───────────────┬─────────────────────┘        delivers the page, then
+                │                              takes no further part
                 │ OSC packets as binary WebSocket frames
-                │ ws://localhost:8080/osc
+                │ ws://localhost:8888/osc
 ┌───────────────▼─────────────────────┐
-│ Jetty 12                            │
-│   DefaultServlet    the web app     │
-│   ConfigServlet     /api/config     │
-│   OscRelayEndpoint  WebSocket       │
-│   OscUdpBridge      verbatim relay  │
+│ your bridge                         │
 └───────────────┬─────────────────────┘
-                │ the same bytes, as UDP datagrams
-                │ udp 127.0.0.1:57120  ← point this wherever you like
+                │ OSC over UDP, or wherever you route it
 ┌───────────────▼─────────────────────┐
 │ your OSC receiver                   │
 └─────────────────────────────────────┘
 ```
 
 The WebSocket hop exists because a browser cannot open a UDP socket. osc.js encodes real
-OSC packets in the page and the server copies the bytes onto the wire untouched — nothing
-is re-encoded, so your receiver sees ordinary OSC.
+OSC packets in the page, so a bridge that forwards the binary frames verbatim gives your
+receiver ordinary OSC — see [What a bridge has to do](#what-a-bridge-has-to-do).
 
 
 ## Quick start
@@ -45,7 +42,7 @@ Requires JDK 17 or newer and Maven.
 
 ```sh
 mvn package
-java -jar target/solarsystem.jar
+java -jar target/solarsystem.jar --ws-url ws://localhost:8888/osc
 ```
 
 Or build a standalone executable with no JVM required — see
@@ -53,13 +50,17 @@ Or build a standalone executable with no JVM required — see
 
 ```sh
 mvn -Pnative package
-target/solarsystem.exe          # target/solarsystem on Linux and macOS
+target/solarsystem.exe --ws-url ws://localhost:8888/osc
 ```
 
 Either way, open <http://localhost:8080/>, press **Start with sound**, and click a planet.
 Headphones matter here: HRTF panning needs two ears.
 
-To watch the OSC without installing anything, in a second terminal:
+`--ws-url` is optional. Without it the page starts with no destination and you type one
+into the **WebSocket server** box in its OSC panel, which is remembered for next time. The
+visualisation and the audio work either way; only the OSC needs somewhere to go.
+
+Once your bridge is delivering UDP, watch the stream without installing anything:
 
 ```sh
 python tools/osc-monitor.py        # or: node tools/osc-monitor.js
@@ -139,161 +140,79 @@ gain = 8 / (8 + 0.85 * (max(distance, 8) - 8))
 ```
 
 
-## Pointing it at your OSC receiver
+## Pointing it at your bridge
 
-Three ways, all equivalent. The default destination is `127.0.0.1:57120`.
+There is one setting, and two places to put it.
 
-**1. At startup**
-
-```sh
-java -jar target/solarsystem.jar --osc-host 192.168.1.50 --osc-port 9000
-```
-
-**2. From the page** — the OSC panel on the right has a host and port box. Type and press
-**Set**. This takes effect immediately, without restarting or reloading.
-
-**3. Over HTTP**
+**At startup**, which is what you want for a scripted launch or a machine you do not sit
+at — the page connects on load with nothing to configure:
 
 ```sh
-curl -X POST http://localhost:8080/api/config \
-     -H 'Content-Type: application/json' \
-     -d '{"oscHost":"192.168.1.50","oscPort":9000}'
+java -jar target/solarsystem.jar --ws-url ws://localhost:8888/osc
 ```
 
-`GET /api/config` returns the current settings plus relay counters, which is a quick way
-to confirm packets are actually leaving:
+**In the page**, in the OSC panel's **WebSocket server** box. Type a URL, press **Go**.
+It is remembered in `localStorage`, so a reload reconnects to the same place.
+
+A URL entered in the page wins over `--ws-url`, so a browser can be sent somewhere else
+without restarting the server. Clearing the box drops the override and falls back to
+whatever the server suggests. The URL given to `--ws-url` is checked at startup, so a typo
+fails there rather than silently in someone's browser.
+
+`GET /api/config` is how the page learns the default, and is the whole of this server's
+API:
 
 ```json
-{"oscHost":"127.0.0.1","oscPort":57120,"oscListenPort":57121,"oscSourcePort":57121,
- "httpPort":8080,"bindHost":"127.0.0.1","allowRetarget":true,"wsPath":"/osc",
- "wsUrl":"ws://127.0.0.1:8080/osc",
- "stats":{"packetsOut":1020,"bytesOut":987836,"packetsIn":0,"dropped":0,"clients":1,
-          "sourcePort":57121}}
+{"wsUrl":"ws://localhost:8888/osc","httpPort":8080,"bindHost":"127.0.0.1"}
 ```
 
-Common destination ports, if you are wondering what to aim at:
+`wsUrl` is `null` when no `--ws-url` was given. There is nothing to POST — this server
+holds no OSC state to change.
 
-| port | application |
-|---|---|
-| 57120 | SuperCollider (`sclang`) — the default here |
-| 57110 | SuperCollider (`scsynth`) |
-| 9000 | TouchDesigner, QLab |
-| 8000 | Pure Data, Processing `oscP5` |
-| 7400 | Reaper, OSCulator |
-
-Add `--verbose` to print a decoded one-line summary of every packet crossing the bridge.
-It is the fastest way to tell "the browser is not sending" apart from "the receiver is not
-listening".
+A note on hostnames: `localhost` often resolves to both `::1` and `127.0.0.1`, with IPv6
+tried first. If your bridge binds IPv4 only, prefer `ws://127.0.0.1:8888/osc` to avoid a
+stall while the browser falls back.
 
 
-### Moving the WebSocket endpoint
+### What a bridge has to do
 
-The browser reaches the relay at `ws://<host>:<http-port>/osc` by default. `--ws-path`
-puts it somewhere else, which matters when the demo sits behind a reverse proxy that
-routes by path, or alongside another service that already owns `/osc`:
+Very little. It accepts a WebSocket connection and forwards the binary frames onward —
+they are already complete, well-formed OSC packets encoded by osc.js in the page, so a
+verbatim copy into a UDP datagram is all that a normal OSC receiver needs.
 
-```sh
-java -jar target/solarsystem.jar --ws-path /studio/osc-in
+* **Binary frames.** osc.js sets `binaryType = "arraybuffer"` and never sends text.
+* **Bundles.** Most frames are OSC bundles with time tag 0. A receiver that only handles
+  single messages needs to unwrap them; forwarding verbatim leaves that to the far end.
+* **Size.** About 1 KB per frame with nine bodies, up to 60 frames a second.
+* **Origin.** Browsers do not apply a CORS preflight to WebSockets but do send an `Origin`
+  header, so a bridge that inspects it must allow the page's origin. The page and the
+  bridge being on different ports is the normal case.
+* **Mixed content.** If you serve the page over `https`, the bridge must be `wss://`.
+
+Roughly twenty lines of Node covers it:
+
+```js
+const { Server } = require('ws');
+const dgram = require('dgram');
+const udp = dgram.createSocket('udp4');
+
+new Server({ port: 8888, path: '/osc' }).on('connection', (ws) => {
+  ws.on('message', (data, isBinary) => {
+    if (isBinary) udp.send(data, 57120, '127.0.0.1');
+  });
+});
 ```
 
-Nothing needs changing in the page. It never hardcodes the path — it asks `/api/config`,
-which reports both `wsPath` and a ready-made `wsUrl` built from the request, so the host,
-port and scheme all come out right whether you reached the page over `localhost`, a LAN
-address, or `https` through a proxy.
+Point `tools/osc-monitor.py` at 57120 and you will see the stream.
 
-A leading slash is optional and a trailing one is ignored, so `osc`, `/osc` and `/osc/`
-all mean the same endpoint. Nested paths like `/bridge/osc` are fine. `/` and
-`/api/config` are refused, as is anything with a query string, a space, or `{}` — braces
-would be read as a URI template variable by the WebSocket container.
+### Reaching it from another machine
 
-Like the ports, this is fixed at startup: the endpoint is registered with the container
-when the server boots, so there is no live equivalent of the OSC destination box.
+`--bind 0.0.0.0` makes the page reachable from elsewhere on the network. That now exposes
+only a static file server, since this process holds no OSC socket of its own.
 
-### Using your own bridge instead
-
-`--no-websocket` turns the relay off completely. No WebSocket endpoint is registered, no
-UDP socket is opened, no relay threads start; Jetty does nothing but serve the
-application. The page then gets its WebSocket URL from its own settings:
-
-```sh
-java -jar target/solarsystem.jar --no-websocket
-```
-
-The OSC panel's **WebSocket** box becomes the control that matters. Type the URL of your
-bridge and press **Go**:
-
-```
-ws://127.0.0.1:9001/osc
-```
-
-It is remembered in `localStorage`, so a reload reconnects to the same place. The UDP
-destination box and the relay counters disappear, because they describe the built-in
-relay and there no longer is one.
-
-To skip the typing, `--ws-url` supplies the default:
-
-```sh
-java -jar target/solarsystem.jar --no-websocket --ws-url ws://127.0.0.1:9001/osc
-```
-
-Now the page connects on load with nothing to configure, which is what you want for a
-scripted launch or a machine you do not sit at. It is a *default*, not a lock: a URL
-already saved in the browser still wins, and clearing the box reverts to whatever the
-server offers. The URL is checked at startup, so a typo fails there rather than silently
-in someone's browser.
-
-`--ws-url` works with the relay left on too, though the server then says so, because its
-own relay would sit unused:
-
-```
-Note: --ws-url sends the page to ws://127.0.0.1:9001/osc, so this server's own
-      relay will sit unused. Add --no-websocket to switch it off.
-```
-
-That box is present even when the relay *is* running, where it defaults to this server's
-own URL. Typing a different one overrides it; clearing it goes back to the server's.
-So you can point at an external bridge without restarting, and `--no-websocket` is really
-just the switch that stops offering a default.
-
-`GET /api/config` reports `"websocket": false` and nulls out everything that describes the
-relay, rather than returning plausible-looking zeros, and `POST` is refused with an
-explanation. It also reports two URLs, which are only the same when the page is using this
-server's own relay:
-
-| field | meaning |
-|---|---|
-| `relayUrl` | this server's own endpoint, or `null` if it runs none |
-| `wsUrl` | what the page should connect to by default |
-
-A page whose socket is not on `relayUrl` shows `connected to an external bridge` and counts
-only the bundles it has sent, because the relay's UDP counters would be describing someone
-else's traffic — or nothing at all.
-
-Your bridge needs to accept binary frames — osc.js sets `binaryType = "arraybuffer"` and
-sends encoded OSC packets, exactly the bytes the built-in relay receives. Cross-origin is
-fine: browsers do not apply a CORS preflight to WebSockets, though they do send `Origin`,
-so a bridge that inspects it must allow the page's origin.
-
-### Receiving from another machine
-
-Point `--osc-host` at the other machine's address. Nothing else changes — the browser
-still talks to the local server, which does the UDP send.
-
-If you also want the *page* reachable from elsewhere, add `--bind 0.0.0.0`. Be aware of
-what that means: the relay will then accept WebSocket connections from anyone who can
-reach the port and emit UDP on their behalf. Add `--no-retarget` to at least pin the
-destination. The server prints a warning when you do this.
-
-
-### Talking back
-
-Datagrams arriving on `--osc-listen-port` (default 57121) are forwarded to every connected
-browser. The demo does not act on them yet, but the path is live and
-`OscBridge` in `webapp/js/oscbridge.js` is an `EventTarget`, so wiring up a handler is a
-few lines. Set `--osc-listen-port 0` to disable inbound entirely.
-
-Replies should go to the **source port** shown in the banner, which is the same 57121 by
-default.
+The `--ws-url` you hand out must be resolvable *from the browser*, not from the server, so
+`ws://127.0.0.1:8888/osc` will not work for a remote viewer — use the bridge machine's
+actual address.
 
 
 ## OSC address schema
@@ -444,7 +363,7 @@ OSCdef(\moved, { |msg| ("now listening from " ++ msg[2]).postln }, '/ss/select')
 [route /ss/body/earth /ss/listener]
 ```
 
-Start the server with `--osc-port 8000` to match.
+Have your bridge forward to UDP 8000 to match.
 
 ### Max/MSP
 
@@ -454,7 +373,7 @@ Start the server with `--osc-port 8000` to match.
 [route /ss/body/mars /ss/time]
 ```
 
-Start with `--osc-port 7400`.
+Have your bridge forward to UDP 7400.
 
 ### python-osc
 
@@ -473,13 +392,14 @@ BlockingOSCUDPServer(("127.0.0.1", 57120), dispatcher).serve_forever()
 
 ### TouchDesigner
 
-Add an **OSC In CHOP** (or DAT) on port 9000 and start the server with
-`--osc-port 9000`. The bundled messages arrive as separate channels per address.
+Add an **OSC In CHOP** (or DAT) on port 9000 and have your bridge forward there. The
+bundled messages arrive as separate channels per address.
 
 ### Bundled monitors
 
 `tools/osc-monitor.py` and `tools/osc-monitor.js` need nothing installed — no `pip`, no
-`npm`. Both are short and deliberately readable if you want a reference OSC 1.0 decoder.
+`npm`. Point one at whatever UDP port your bridge forwards to. Both are short and
+deliberately readable if you want a reference OSC 1.0 decoder.
 
 ```sh
 python tools/osc-monitor.py --port 9000     # live table
@@ -491,17 +411,11 @@ node   tools/osc-monitor.js --raw
 ## Server options
 
 ```
---http-port <n>        HTTP port for the web app          (default 8080)
---bind <host>          interface to bind HTTP + UDP to     (default 127.0.0.1)
---osc-host <host>      where to send OSC over UDP          (default 127.0.0.1)
---osc-port <n>         UDP port to send OSC to             (default 57120)
---osc-listen-port <n>  UDP port for OSC coming back, 0=off (default 57121)
---ws-path <path>       WebSocket path osc.js connects to    (default /osc)
---ws-url <url>         tell the page to connect here instead of to this server
---no-websocket         serve the app only; run no OSC relay at all
---no-retarget          forbid changing the OSC target from the browser
---web-dir <dir>        serve the web app from a directory (development)
---verbose              print a decoded summary of every packet
+--ws-url <url>     OSC WebSocket server the page connects to,
+                   e.g. ws://localhost:8888/osc
+--http-port <n>    HTTP port for the web app          (default 8080)
+--bind <host>      interface to bind to               (default 127.0.0.1)
+--web-dir <dir>    serve the web app from a directory (development)
 --help
 ```
 
@@ -524,25 +438,24 @@ mvn -Pnative package
 |  | `mvn package` | `mvn -Pnative package` |
 |---|---|---|
 | output | `target/solarsystem.jar` | `target/solarsystem.exe` |
-| size | 5.2 MB | 38 MB |
+| size | 3.5 MB | 26 MB |
 | needs a JVM installed | yes | no |
 | Jetty ready in | ~300 ms | ~25 ms |
-| build takes | ~3 s | ~20 s |
+| build takes | ~3 s | ~17 s |
 
 The executable is genuinely standalone — the whole web app, three.js and osc.js included,
 is embedded in it. Copy that one file anywhere and run it. `native-image` also drops a
 `management_ext.dll` next to it; that is only needed if you enable JVM monitoring, which
 this profile deliberately does not, so you can ignore it.
 
-Everything works exactly as it does on the JVM: static hosting, `/api/config`, the
-WebSocket relay, inbound UDP, and `--verbose` packet decoding. The options are identical,
-and `--help` adjusts its usage line to match how you launched it.
+Everything works exactly as it does on the JVM: static hosting, caching, and
+`/api/config`. The options are identical, and `--help` adjusts its usage line to match how
+you launched it.
 
 ### How the reflection is handled
 
-Closed-world compilation cannot see reflection, and Jetty uses plenty of it — service
-providers are found with `ServiceLoader`, and message decoders are resolved by type. Two
-metadata files cover it, both under
+Closed-world compilation cannot see reflection, and Jetty finds its service providers with
+`ServiceLoader`. Two metadata files cover it, both under
 `src/main/resources/META-INF/native-image/`, where `native-image` picks them up
 automatically:
 
@@ -557,7 +470,7 @@ and exercise it — load the page, click a body, let OSC flow for a while:
 
 ```sh
 java -agentlib:native-image-agent=config-output-dir=src/main/resources/META-INF/native-image/com.ebremer/solarsystem,config-write-period-secs=4 \
-     -jar target/solarsystem.jar --verbose
+     -jar target/solarsystem.jar --ws-url ws://localhost:8888/osc
 ```
 
 `config-write-period-secs` matters: the agent normally writes on clean JVM exit, and on
@@ -565,12 +478,8 @@ Windows there is no easy way to deliver that to a background process. Delete the
 file it leaves behind, and drop the `webapp/...` resource entries it records, since the
 glob already covers them.
 
-Note that `OscRelayEndpoint` needs no reflection metadata at all. It is a programmatic
-`jakarta.websocket.Endpoint` registered through `ServerEndpointConfig` with a configurator
-that hands the container a ready-made instance, so nothing about it is constructed or
-dispatched reflectively. That was forced by `--ws-path` — `@ServerEndpoint` takes a
-compile-time constant and so cannot carry a runtime path — but it made the native image
-simpler as a side effect.
+None of this project's own classes need reflection metadata: both servlets are registered
+as instances rather than by class name, so the container never constructs one.
 
 ### If the native build fails
 
@@ -601,10 +510,7 @@ src/main/java/com/ebremer/solarsystem/
   SolarSystemServer.java   Jetty bootstrap, static hosting, banner
   Config.java              command line options
   StaticServlet.java       serves the web app from the classpath
-  ConfigServlet.java       GET/POST /api/config
-  OscRelayEndpoint.java    WebSocket endpoint, path from --ws-path
-  OscUdpBridge.java        WebSocket ⇄ UDP, both directions
-  OscPeek.java             OSC decoder for --verbose logging
+  ConfigServlet.java       GET /api/config, reports --ws-url
 src/main/resources/META-INF/native-image/com.ebremer/
   solarsystem/             reachability metadata, agent generated
   solarsystem-webapp/      reachability metadata, hand written
@@ -632,19 +538,19 @@ must stay side by side.
 with sound**. If the page was opened silently, the **Start audio** button in the Audio
 panel does the same thing.
 
-**The OSC dot is red or amber.** Amber means it is reconnecting, which is normal if the
-server restarted; it backs off up to 10 seconds. Red with `osc.js failed to load` means
-`vendor/osc-browser.min.js` did not load.
+**The OSC dot is amber and stays there.** It is retrying, backing off to ten seconds.
+Either the bridge is not running, or the URL is wrong. The status line under the dot shows
+which URL it is attempting. Amber is also normal and self-correcting while a bridge
+restarts.
 
-**The dot is green but nothing arrives.** The green dot only means the browser reached the
-bridge. Check `packetsOut` in `GET /api/config` — if it is climbing, the packets are
-leaving and the problem is downstream: wrong port, a firewall, or a receiver bound to
-`127.0.0.1` when the packets come from elsewhere. `--verbose` will show you exactly what
-is being sent where.
+**The dot never leaves grey and reads "set a WebSocket server above".** No URL is
+configured: pass `--ws-url`, or type one into the box.
 
-**Address already in use** for UDP 57121 usually means something else (often
-SuperCollider) already holds it. The server falls back to an ephemeral source port and
-tells you so; inbound OSC is then disabled. `--osc-listen-port 0` makes that explicit.
+**The dot is green but nothing arrives at your receiver.** Green means the browser reached
+your bridge, and that is as far as this page can see. The problem is beyond it — check
+that the bridge is forwarding *binary* frames, and that the far end is bound where you
+expect. `tools/osc-monitor.py --raw` on the bridge's UDP destination will tell you whether
+packets are landing at all.
 
 **Everything is dark.** WebGL may be unavailable or blocked; check the browser console.
 

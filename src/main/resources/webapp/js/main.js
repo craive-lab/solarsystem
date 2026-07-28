@@ -417,28 +417,10 @@ const ui = new UI(BODIES, {
     }
   },
   onOscRate: (hz) => { state.oscRateHz = hz; },
-  onOscTarget: retargetOsc,
   onWsUrl: connectOsc
 });
 
 oscBridge.addEventListener('state', (e) => ui.setOscState(e.detail.state, e.detail.error));
-
-async function retargetOsc(host, port) {
-  if (!host || !Number.isFinite(port)) return;
-  try {
-    const res = await fetch('api/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ oscHost: host, oscPort: port })
-    });
-    const json = await res.json();
-    if (json.error) { ui.setOscState('error', json.error); return; }
-    ui.setOscConfig(json);
-    ui.setOscState(oscBridge.state);
-  } catch (err) {
-    ui.setOscState('error', String(err));
-  }
-}
 
 /**
  * Opens the OSC socket at a given URL. Used both at startup and whenever the URL box in
@@ -462,38 +444,21 @@ function connectOsc(url) {
 }
 
 /**
- * A URL saved in the page wins over whatever the server advertises, which is what makes
- * --no-websocket usable: the server offers nothing, so the page's own setting is the only
- * source. It is also how you point at an external bridge on a server that does run one.
+ * A URL entered in the page wins over the server's --ws-url, so a machine can be pointed
+ * somewhere else without restarting anything. Clearing the box drops the override and
+ * falls back to what the server suggests.
  */
-function resolveWsUrl(config) {
-  return savedWsUrl() || config.wsUrl || '';
-}
-
 async function initOsc() {
+  let serverUrl = '';
   try {
-    const config = await (await fetch('api/config')).json();
-    const url = resolveWsUrl(config);
-    ui.setOscConfig(config, url);
-    if (!url) {
-      // The idle text already explains what to do when there is no relay; adding a
-      // detail here would just say it twice.
-      ui.setOscState('idle');
-      return;
-    }
-    connectOsc(url);
+    serverUrl = (await (await fetch('api/config')).json()).wsUrl || '';
   } catch (err) {
+    // Not fatal: the page still runs, and a URL can be typed in by hand.
     ui.setOscState('error', 'cannot read /api/config: ' + err);
   }
+  ui.setServerWsUrl(serverUrl);
+  connectOsc(savedWsUrl() || serverUrl);
 }
-
-setInterval(async () => {
-  try {
-    const config = await (await fetch('api/config')).json();
-    ui.setOscConfig(config);
-    ui.setOscStats(oscBridge.sent, config.stats);
-  } catch { /* server restarting, the next tick will pick it up */ }
-}, 2000);
 
 // ---------------------------------------------------------------- loop
 
@@ -550,6 +515,7 @@ function tick() {
   if (uiAccumulator >= 1 / 15) {
     uiAccumulator = 0;
     ui.update(field, jd, state.simDays);
+    ui.setOscStats(oscBridge.sent);
   }
 
   if (state.oscRateHz > 0) {

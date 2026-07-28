@@ -28,13 +28,6 @@
       <version>${jetty.version}</version>
     </dependency>
 
-    <!-- JSR-356 (jakarta.websocket) server endpoint support -->
-    <dependency>
-      <groupId>org.eclipse.jetty.ee10.websocket</groupId>
-      <artifactId>jetty-ee10-websocket-jakarta-server</artifactId>
-      <version>${jetty.version}</version>
-    </dependency>
-
     <!-- Console logging for Jetty's slf4j-api calls -->
     <dependency>
       <groupId>org.eclipse.jetty</groupId>
@@ -110,11 +103,10 @@
       (Visual Studio with "Desktop development with C++"). The build takes a few minutes
       and a couple of GB of RAM; the ordinary `mvn package` jar is unaffected.
 
-      Jetty resolves its JSR-356 WebSocket endpoint and several service providers by
-      reflection, which the closed-world analysis cannot see. The metadata under
-      src/main/resources/META-INF/native-image/ supplies it: com.ebremer/solarsystem/ was
-      produced by the tracing agent against a real run, com.ebremer/solarsystem-webapp/ is
-      the hand-written glob that embeds the web app.
+      Jetty finds several service providers by reflection, which the closed-world analysis
+      cannot see. The metadata under src/main/resources/META-INF/native-image/ supplies it:
+      com.ebremer/solarsystem/ was produced by the tracing agent against a real run, and
+      com.ebremer/solarsystem-webapp/ is the hand-written glob that embeds the web app.
     -->
     <profile>
       <id>native</id>
