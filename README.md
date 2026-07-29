@@ -163,10 +163,31 @@ projectors, and let Pixelwarp do the warping and blending.
 | <kbd>←</kbd> <kbd>→</kbd> | rotate left and right |
 | <kbd>Page Up</kbd> <kbd>Page Dn</kbd> | climb and dive |
 | <kbd>Shift</kbd> | hold to fly four times faster |
+| click | fly to a body, on the wall or in the panel |
+| <kbd>H</kbd> | hide the panels for a clean room |
 
 Yaw only — the heading never pitches or rolls, because a roomful of people standing up
 should not have the horizon tilt under them. Speeds are deliberately unhurried: 14 scene
 units per second against an Earth orbit of radius 12 and a Neptune orbit of 78.
+
+Clicking a body flies the room to it and then holds station, so it stays framed as it
+carries on along its orbit until someone takes the controls again. The approach eases in
+rather than cutting, because an instant jump is disorienting when the audience is standing
+up inside the picture. It arrives just below the ecliptic for the same reason the ship
+starts there.
+
+Clicks on the band invert the projection — canvas pixel to azimuth and elevation to a
+world bearing — and then pick the body closest to that bearing, rather than raycasting
+against the geometry. That is partly the natural question to ask on a panorama, and partly
+forced: three.js resolves a sprite hit by projecting it through `raycaster.camera`, and a
+view assembled from six cube faces has no single camera to offer. Testing bearings also
+gives every body the same generous target, which matters when someone is pointing at a
+wall several metres away.
+
+The floating panel on the left is the same body list the desktop view carries — the same
+markup, classes and stylesheet, built by `BodyList` in `webapp/js/ui.js` — showing each
+body's bearing, elevation, distance and level. Clicking a row flies there too. Everything
+in the DOM is projected onto the wall along with the band, so <kbd>H</kbd> hides the lot.
 
 The ship starts 30 units out and 6 *below* the ecliptic, facing the Sun, which therefore
 opens centred on the front wall. Below rather than above on purpose: the band is not
@@ -232,6 +253,8 @@ its pitch up.
 * With the heading at 0° the Sun sits at band x ≈ 6,317, centred on the front wall.
 * The span 11,165–11,636 (the right-hand end of the canvas) is black.
 * Pressing <kbd>←</kbd> slides the scene to the *right*.
+* Clicking a body on the wall starts an approach: its row highlights and its distance in
+  the panel starts falling.
 * Nothing important sits in a corner or the entrance.
 
 

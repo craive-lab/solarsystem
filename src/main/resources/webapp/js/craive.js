@@ -26,7 +26,7 @@ import { BODIES, julianDate, centuries, J2000 } from './bodies.js';
 import { SolarSystemScene } from './scenery.js';
 import { AudioEngine, computeField } from './audio.js';
 import { OscBridge } from './oscbridge.js';
-import { savedWsUrl, checkWsUrl } from './ui.js';
+import { BodyList, savedWsUrl, checkWsUrl } from './ui.js';
 
 /** The lab's screen, from `CRAIVE specs for content creators` (J. Parkman Carter, RPI). */
 const BAND = {
@@ -168,8 +168,15 @@ const FLIGHT_KEYS = new Set([
 
 window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
+  if (k === 'h' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    // Anything in the DOM is projected onto the wall along with the band, so the
+    // operator's readouts need a way to get out of the picture.
+    document.body.classList.toggle('bare');
+    return;
+  }
   if (!FLIGHT_KEYS.has(k) || e.ctrlKey || e.metaKey || e.altKey) return;
   held.add(k);
+  if (k !== 'shift') travel.index = -1; // taking the controls cancels an approach
   e.preventDefault(); // these keys would otherwise scroll the page
 });
 window.addEventListener('keyup', (e) => held.delete(e.key.toLowerCase()));
@@ -198,6 +205,109 @@ function flyShip(dt) {
   if (r < SHIP.minRadius) ship.position.multiplyScalar(SHIP.minRadius / Math.max(r, 1e-6));
 }
 
+// ---------------------------------------------------------------- pick and approach
+
+/**
+ * Clicking a body flies the room to it rather than cutting: an instant jump is
+ * disorienting when the audience is standing up inside the picture. The approach eases
+ * in and then holds station, so the body stays framed as it carries on along its orbit
+ * until someone takes the controls again.
+ */
+const travel = { index: -1 };
+const pickDir = new THREE.Vector3();
+const toBody = new THREE.Vector3();
+const toTarget = new THREE.Vector3();
+const standpoint = new THREE.Vector3();
+
+/** How close to a body's bearing a click has to land, in degrees. */
+const PICK_TOLERANCE = 2.5;
+
+/**
+ * Inverts the band mapping — canvas pixel to azimuth and elevation to a world direction
+ * from the ship — so the panorama can be clicked despite being an unwrapped projection.
+ *
+ * The hit test is angular rather than a raycast against the geometry. Partly because
+ * that is the natural question on a band ("which body lies along this bearing?"), and
+ * partly because it has to be: three.js resolves a Sprite hit by projecting it through
+ * `raycaster.camera`, and a panorama assembled from six cube faces has no single camera
+ * to offer. Testing bearings instead also gives every body the same generous target,
+ * which matters when someone is pointing at a wall several metres away.
+ */
+function pickAt(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const u = (clientX - rect.left) / rect.width;
+  const v = 1 - (clientY - rect.top) / rect.height; // texture v runs bottom-up
+  if (u < 0 || u > 1 || v < 0 || v > 1) return -1;
+  const entrance = bandMaterial.uniforms.uEntrance.value;
+  if (u >= entrance.x && u <= entrance.y) return -1; // the entrance shows nothing to hit
+
+  const theta = (u - BAND.frontCenter / BAND.width) * Math.PI * 2 + ship.yaw;
+  const phi = THREE.MathUtils.degToRad(BAND.elevationCenter)
+            + (v - 0.5) * THREE.MathUtils.degToRad(BAND.verticalFov);
+  const cp = Math.cos(phi);
+  pickDir.set(Math.sin(theta) * cp, Math.sin(phi), -Math.cos(theta) * cp);
+
+  let best = -1;
+  let bestDot = -1;
+  for (let n = 0; n < positions.length; n++) {
+    toBody.copy(positions[n]).sub(ship.position);
+    const distance = toBody.length();
+    if (distance < 1e-6) continue;
+    toBody.divideScalar(distance);
+    const dot = toBody.dot(pickDir);
+    // Generous near a small distant body, and at least as large as a close one looks.
+    const reach = Math.max(THREE.MathUtils.degToRad(PICK_TOLERANCE),
+                           Math.atan2(sky.objects[n].radius, distance));
+    if (dot >= Math.cos(reach) && dot > bestDot) {
+      bestDot = dot;
+      best = n;
+    }
+  }
+  return best;
+}
+
+/** How far off to hold station, so the body roughly fills the band's 37 degrees. */
+function standoffFrom(index) {
+  return THREE.MathUtils.clamp(sky.objects[index].radius * 9, 4.5, 30);
+}
+
+function flyTo(index) {
+  if (index < 0) return;
+  travel.index = index;
+  sky.setHighlight(index);
+}
+
+function updateApproach(dt) {
+  if (travel.index < 0) return;
+  const target = positions[travel.index];
+  toTarget.copy(target).sub(ship.position);
+
+  // Stand off along the line we are already approaching from, dipped below the ecliptic
+  // so the body sits in the upper part of the band where there is the most room.
+  standpoint.copy(ship.position).sub(target);
+  if (standpoint.lengthSq() < 1e-6) standpoint.set(0, -1, 1);
+  standpoint.normalize();
+  standpoint.y = -0.28;
+  standpoint.normalize().multiplyScalar(standoffFrom(travel.index)).add(target);
+
+  // Exponential easing, so the rate does not depend on the frame rate.
+  ship.position.lerp(standpoint, 1 - Math.exp(-1.6 * dt));
+
+  const wantYaw = Math.atan2(toTarget.x, -toTarget.z);
+  let turn = wantYaw - ship.yaw;
+  turn = Math.atan2(Math.sin(turn), Math.cos(turn)); // take the short way round
+  ship.yaw += turn * (1 - Math.exp(-3 * dt));
+}
+
+let downAt = null;
+canvas.addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY }; });
+canvas.addEventListener('pointerup', (e) => {
+  if (!downAt) return;
+  const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y);
+  downAt = null;
+  if (moved <= 6) flyTo(pickAt(e.clientX, e.clientY));
+});
+
 // ---------------------------------------------------------------- audio and OSC
 
 const audio = new AudioEngine(BODIES);
@@ -209,6 +319,10 @@ const hud = {
   nearest: document.getElementById('hud-nearest'),
   gate: document.getElementById('gate')
 };
+
+// The same list the desktop view carries, with the same live bearings and levels.
+// Nobody stands on a body here, so every row reports one, including the Sun.
+const bodyList = new BodyList(document.getElementById('body-list'), BODIES, flyTo);
 
 async function launch() {
   hud.gate.classList.add('hiding');
@@ -267,6 +381,7 @@ function tick() {
 
   prevPosition.copy(ship.position);
   flyShip(dt);
+  updateApproach(dt);
   // The ship's own motion matters to the Doppler shift as much as the planets' does.
   ship.velocity.copy(ship.position).sub(prevPosition).divideScalar(Math.max(dt, 1e-4));
 
@@ -290,10 +405,12 @@ function tick() {
     }
   }
 
+  // Text writes force layout, and none of these readouts need 60 fps.
   hudAccumulator += dt;
-  if (hudAccumulator >= 0.2) {
+  if (hudAccumulator >= 0.1) {
     hudAccumulator = 0;
     updateHud();
+    bodyList.update(field, travel.index, -1);
   }
 
   // Photograph the whole sky from the ship, then unwrap it onto the band.

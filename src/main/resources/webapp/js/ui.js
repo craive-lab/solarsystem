@@ -60,19 +60,20 @@ function calendar(jd) {
   return new Date(ms).toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
 }
 
-export class UI {
-  constructor(bodies, handlers) {
+/**
+ * The list of bodies with each one's live bearing and level. Shared by the desktop view
+ * and the CRAIVE band so the two cannot drift apart; the markup and the CSS classes are
+ * the same in both, only the containing panel differs.
+ */
+export class BodyList {
+  /**
+   * @param list      the <ul> to fill
+   * @param onSelect  called with a body index when a row is clicked
+   */
+  constructor(list, bodies, onSelect) {
     this.bodies = bodies;
-    this.h = handlers;
     this.rows = [];
-    this.selected = -1;
-    this.#buildList();
-    this.#wire();
-  }
-
-  #buildList() {
-    const list = $('body-list');
-    this.bodies.forEach((body, index) => {
+    bodies.forEach((body, index) => {
       const li = document.createElement('li');
       li.dataset.index = String(index);
       li.style.color = hex(body.color);
@@ -81,7 +82,7 @@ export class UI {
         <span><span class="name">${body.name}</span><span class="note">${body.sound.note}</span></span>
         <span class="bearing">&mdash;</span>
         <span class="meter"><i></i></span>`;
-      li.addEventListener('click', () => this.h.onSelect(index));
+      if (onSelect) li.addEventListener('click', () => onSelect(index));
       list.appendChild(li);
       this.rows.push({
         li,
@@ -89,6 +90,38 @@ export class UI {
         meter: li.querySelector('.meter > i')
       });
     });
+  }
+
+  /**
+   * @param highlight  body to mark as current, or -1
+   * @param standingOn body the listener is on, which has no bearing of its own to report.
+   *        On the band nobody stands on anything, so pass -1 and every row shows a bearing.
+   */
+  update(field, highlight, standingOn) {
+    for (let n = 0; n < this.rows.length; n++) {
+      const r = this.rows[n];
+      const g = field[n];
+      r.li.classList.toggle('here', n === highlight);
+      if (!g) continue;
+      if (n === standingOn) {
+        r.bearing.textContent = 'you are here';
+        r.meter.style.width = '100%';
+      } else {
+        const az = g.azimuth >= 0 ? `+${g.azimuth.toFixed(0)}` : g.azimuth.toFixed(0);
+        r.bearing.textContent = `az ${az}° el ${g.elevation.toFixed(0)}° · ${g.distance.toFixed(1)}u`;
+        r.meter.style.width = (g.gain * 100).toFixed(1) + '%';
+      }
+    }
+  }
+}
+
+export class UI {
+  constructor(bodies, handlers) {
+    this.bodies = bodies;
+    this.h = handlers;
+    this.selected = -1;
+    this.list = new BodyList($('body-list'), bodies, (index) => handlers.onSelect(index));
+    this.#wire();
   }
 
   #wire() {
@@ -159,7 +192,6 @@ export class UI {
   setSelected(index) {
     this.selected = index;
     const body = this.bodies[index];
-    this.rows.forEach((r, n) => r.li.classList.toggle('here', n === index));
     $('here-swatch').style.color = hex(body.color);
     $('here-swatch').style.background = hex(body.color);
     $('here-name').textContent = body.name;
@@ -213,18 +245,8 @@ export class UI {
 
   /** Per-frame readouts. Kept to text writes so it stays cheap at 60 fps. */
   update(field, jd, simDays) {
-    for (let n = 0; n < this.rows.length; n++) {
-      const r = this.rows[n];
-      const g = field[n];
-      if (n === this.selected) {
-        r.bearing.textContent = 'you are here';
-        r.meter.style.width = '100%';
-      } else {
-        const az = g.azimuth >= 0 ? `+${g.azimuth.toFixed(0)}` : g.azimuth.toFixed(0);
-        r.bearing.textContent = `az ${az}° el ${g.elevation.toFixed(0)}° · ${g.distance.toFixed(1)}u`;
-        r.meter.style.width = (g.gain * 100).toFixed(1) + '%';
-      }
-    }
+    // Here the highlighted body and the one being stood on are always the same.
+    this.list.update(field, this.selected, this.selected);
     $('out-date').textContent = calendar(jd);
     $('out-jd').textContent = jd.toFixed(2);
   }

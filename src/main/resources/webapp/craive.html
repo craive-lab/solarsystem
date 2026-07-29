@@ -13,6 +13,12 @@
     exists only for whoever is driving. Nothing on the band itself is HTML: it is all
     in-scene geometry, because a cube capture cannot photograph a DOM overlay.
   -->
+  <!--
+    The desktop view's stylesheet, for the body list: same markup, same classes, so the
+    panel cannot drift from the one at /. The rules below come after it and win where
+    the two disagree.
+  -->
+  <link rel="stylesheet" href="css/style.css">
   <style>
     html, body {
       margin: 0;
@@ -37,6 +43,20 @@
       display: block;
       image-rendering: auto;
     }
+
+    /* Floating operator panel. Everything in the DOM is projected onto the wall along
+       with the band, so H hides the lot for a clean room. */
+    #left-panel {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 10;
+      width: 268px;
+      max-height: calc(100vh - 32px);
+      overflow-y: auto;
+    }
+    #left-panel li { cursor: pointer; }
+    body.bare #left-panel, body.bare #hud { display: none; }
 
     #hud {
       position: fixed;
@@ -112,11 +132,19 @@
 
 <canvas id="band"></canvas>
 
+<aside id="left-panel" class="panel">
+  <h2>Bodies</h2>
+  <ul id="body-list"></ul>
+  <p class="legend">click to fly there &middot; <span class="k">az</span> bearing &middot;
+    <span class="k">el</span> elevation &middot; bar is level</p>
+</aside>
+
 <div id="hud">
   <div id="hud-position">&mdash;</div>
   <div id="hud-nearest">&mdash;</div>
   <div id="hud-status">OSC: starting&hellip;</div>
-  <div id="hud-keys">&uarr;&darr; fly &middot; &larr;&rarr; turn &middot; PgUp/PgDn climb &middot; Shift boost</div>
+  <div id="hud-keys">&uarr;&darr; fly &middot; &larr;&rarr; turn &middot; PgUp/PgDn climb &middot; Shift boost
+    &middot; click a body to fly to it &middot; H hides the panels</div>
 </div>
 
 <div id="gate">
@@ -133,6 +161,8 @@
       <span><kbd>&larr;</kbd> <kbd>&rarr;</kbd></span><span>rotate left and right</span>
       <span><kbd>Page Up</kbd> <kbd>Page Dn</kbd></span><span>climb and dive</span>
       <span><kbd>Shift</kbd></span><span>hold to fly faster</span>
+      <span>click</span><span>fly to a body, on the wall or in the list</span>
+      <span><kbd>H</kbd></span><span>hide the panels for a clean room</span>
     </div>
     <button id="gate-start">Launch</button>
   </div>
