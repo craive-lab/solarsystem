@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Solar System &middot; CRAIVE Lab</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='7' fill='%23ffc648'/><circle cx='28' cy='16' r='2.5' fill='%234d8fe0'/></svg>">
+  <!--
+    The RPI CRAIVE Lab front end. The canvas is the lab's wrap-around band:
+    1200 x 15360 px, 12.8:1, eight WUXGA projectors warped and blended by Pixelwarp.
+    Open fullscreen on the desktop that spans them.
+
+    Everything here is deliberately minimal — the band is the display, and the HUD
+    exists only for whoever is driving. Nothing on the band itself is HTML: it is all
+    in-scene geometry, because a cube capture cannot photograph a DOM overlay.
+  -->
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+      color: #dce6f5;
+      font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    /*
+      The band keeps its 12.8:1 aspect and fills the width of the spanned desktop.
+      Vertically centred so a preview on an ordinary monitor is still legible.
+    */
+    #band {
+      position: absolute;
+      top: 50%;
+      left: 0;
+      width: 100%;
+      height: auto;
+      transform: translateY(-50%);
+      display: block;
+      image-rendering: auto;
+    }
+
+    #hud {
+      position: fixed;
+      left: 14px;
+      bottom: 12px;
+      z-index: 10;
+      font: 11px/1.7 ui-monospace, "Cascadia Mono", Consolas, monospace;
+      color: #7fa2cc;
+      text-shadow: 0 0 6px #000, 0 0 2px #000;
+      pointer-events: none;
+    }
+    #hud b { color: #cfe2ff; font-weight: 600; }
+    #hud-keys { color: #55708f; margin-top: 4px; }
+
+    #gate {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at 50% 45%, rgba(18, 32, 62, 0.9), rgba(0, 0, 0, 0.97));
+      transition: opacity 0.6s ease;
+    }
+    #gate.hiding { opacity: 0; pointer-events: none; }
+
+    .card {
+      max-width: 560px;
+      padding: 40px 46px;
+      text-align: center;
+      border: 1px solid rgba(126, 168, 214, 0.2);
+      border-radius: 14px;
+      background: rgba(6, 11, 22, 0.8);
+    }
+    .card h1 {
+      margin: 0 0 4px;
+      font-size: 30px;
+      font-weight: 300;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    .card .sub { margin: 0 0 22px; color: #6fb4ff; letter-spacing: 0.06em; }
+    .card p { color: #8ea3c2; text-align: left; }
+    .card kbd {
+      display: inline-block;
+      min-width: 1.6em;
+      padding: 2px 6px;
+      margin: 0 1px;
+      font: 11px/1.4 ui-monospace, Consolas, monospace;
+      color: #cfe2ff;
+      border: 1px solid rgba(126, 168, 214, 0.35);
+      border-bottom-width: 2px;
+      border-radius: 4px;
+      background: rgba(111, 180, 255, 0.08);
+    }
+    .keys { margin: 20px 0 26px; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 12px; }
+    .keys span:nth-child(even) { color: #8ea3c2; text-align: left; }
+    .keys span:nth-child(odd) { text-align: right; white-space: nowrap; }
+    button {
+      width: 100%;
+      padding: 12px;
+      font: 600 14px/1 system-ui, sans-serif;
+      letter-spacing: 0.06em;
+      color: #04101f;
+      background: #6fb4ff;
+      border: none;
+      border-radius: 7px;
+      cursor: pointer;
+    }
+    button:hover { background: #8ac4ff; }
+  </style>
+</head>
+<body>
+
+<canvas id="band"></canvas>
+
+<div id="hud">
+  <div id="hud-position">&mdash;</div>
+  <div id="hud-nearest">&mdash;</div>
+  <div id="hud-status">OSC: starting&hellip;</div>
+  <div id="hud-keys">&uarr;&darr; fly &middot; &larr;&rarr; turn &middot; PgUp/PgDn climb &middot; Shift boost</div>
+</div>
+
+<div id="gate">
+  <div class="card">
+    <h1>Solar System</h1>
+    <p class="sub">CRAIVE Lab &middot; all walls are windows</p>
+    <p>
+      The room is the ship. Every wall looks out on the solar system, and the nine
+      bodies are heard from wherever you have flown to &mdash; pass Jupiter and it
+      goes by down one side of the room.
+    </p>
+    <div class="keys">
+      <span><kbd>&uarr;</kbd> <kbd>&darr;</kbd></span><span>forward and back</span>
+      <span><kbd>&larr;</kbd> <kbd>&rarr;</kbd></span><span>rotate left and right</span>
+      <span><kbd>Page Up</kbd> <kbd>Page Dn</kbd></span><span>climb and dive</span>
+      <span><kbd>Shift</kbd></span><span>hold to fly faster</span>
+    </div>
+    <button id="gate-start">Launch</button>
+  </div>
+</div>
+
+<script src="vendor/osc-browser.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js",
+    "three/addons/": "./vendor/"
+  }
+}
+</script>
+<script type="module" src="js/craive.js"></script>
+
+</body>
+</html>

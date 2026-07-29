@@ -22,6 +22,19 @@ function slug(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
+/**
+ * Something readable out of whatever osc.js hands to an error listener. A failed
+ * WebSocket surfaces as the browser's own error Event, which deliberately carries no
+ * detail — stringifying it gives "[object Event]", which tells a user nothing.
+ */
+function describeError(err) {
+  if (!err) return 'connection failed';
+  if (typeof err === 'string') return err;
+  if (err.message) return err.message;
+  if (typeof Event !== 'undefined' && err instanceof Event) return 'connection refused';
+  return String(err);
+}
+
 const f = (value) => ({ type: 'f', value: Number.isFinite(value) ? value : 0 });
 const i = (value) => ({ type: 'i', value: Math.round(value) | 0 });
 const s = (value) => ({ type: 's', value: String(value) });
@@ -95,14 +108,14 @@ export class OscBridge extends EventTarget {
       if (this.port === port) this.#scheduleRetry();
     });
     port.on('error', (err) => {
-      this.lastError = err && err.message ? err.message : String(err);
+      this.lastError = describeError(err);
       if (this.port === port) this.#scheduleRetry();
     });
 
     try {
       port.open();
     } catch (err) {
-      this.lastError = String(err);
+      this.lastError = describeError(err);
       this.#scheduleRetry();
     }
   }
@@ -166,8 +179,8 @@ export class OscBridge extends EventTarget {
   sendFrame(state) {
     if (!this.connected) return;
     if (performance.now() - this.lastLayout > LAYOUT_INTERVAL_MS) this.sendLayout();
-    const { positions, field, listenerIndex, fwd, up, phases, simDays, j2000Days, daysPerSecond, paused } = state;
-    const lp = positions[listenerIndex];
+    const { positions, field, listener, fwd, up, phases, simDays, j2000Days, daysPerSecond, paused } = state;
+    const lp = listener.position;
     const packets = [
       {
         // Days since J2000 rather than the raw Julian date: an OSC float32 only resolves
@@ -176,9 +189,11 @@ export class OscBridge extends EventTarget {
         args: [f(simDays), f(j2000Days), f(daysPerSecond), i(paused ? 1 : 0)]
       },
       {
+        // A negative index means the listener is not a body: on the CRAIVE band it is the
+        // room itself, flying free.
         address: '/ss/listener',
         args: [
-          i(listenerIndex), s(this.bodies[listenerIndex].name),
+          i(listener.index), s(listener.name),
           f(lp.x), f(lp.y), f(lp.z),
           f(fwd.x), f(fwd.y), f(fwd.z),
           f(up.x), f(up.y), f(up.z)

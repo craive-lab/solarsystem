@@ -41,11 +41,15 @@ const DOPPLER_LIMIT_CENTS = 350;
  *
  * @param positions  scene positions, anything with x/y/z
  * @param velocities scene units per real second, same order
+ * @param listener   {position, velocity, index} — index is the body being stood on, or a
+ *                   negative number when the listener is not a body at all, which is the
+ *                   case on the CRAIVE band where the room itself is the vehicle
  * @param out        array reused between frames
  */
-export function computeField(positions, velocities, listenerIndex, fwd, up, out) {
-  const lp = positions[listenerIndex];
-  const lv = velocities[listenerIndex];
+export function computeField(positions, velocities, listener, fwd, up, out) {
+  const lp = listener.position;
+  const lv = listener.velocity;
+  const listenerIndex = listener.index;
   // right = forward x up, which is +X for the usual forward = -Z, up = +Y frame.
   const rx = fwd.y * up.z - fwd.z * up.y;
   const ry = fwd.z * up.x - fwd.x * up.z;
@@ -278,21 +282,23 @@ export class AudioEngine {
   /**
    * Pushes one frame of simulation state into the audio graph.
    *
-   * @param positions      scene positions of every body
-   * @param field          output of computeField for this frame
-   * @param listenerIndex  body the listener is standing on
-   * @param fwd            listener heading, unit
-   * @param up             listener up, unit
-   * @param phases         orbital mean anomaly in radians, drives the once-per-orbit swell
+   * @param positions  scene positions of every body
+   * @param field      output of computeField for this frame
+   * @param listener   {position, index} — index < 0 when the listener is not a body, in
+   *                   which case every voice stays spatialised
+   * @param fwd        listener heading, unit
+   * @param up         listener up, unit
+   * @param phases     orbital mean anomaly in radians, drives the once-per-orbit swell
    */
-  update(positions, field, listenerIndex, fwd, up, phases) {
+  update(positions, field, listener, fwd, up, phases) {
     if (!this.running) return;
     const ctx = this.ctx;
     const t = ctx.currentTime;
     const smooth = 0.02;
+    const listenerIndex = listener.index;
 
     const L = ctx.listener;
-    const lp = positions[listenerIndex];
+    const lp = listener.position;
     if (L.positionX) {
       L.positionX.setTargetAtTime(lp.x, t, smooth);
       L.positionY.setTargetAtTime(lp.y, t, smooth);

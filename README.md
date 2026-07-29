@@ -140,6 +140,101 @@ gain = 8 / (8 + 0.85 * (max(distance, 8) - 8))
 ```
 
 
+## The CRAIVE Lab: `/craive`
+
+RPI's CRAIVE Lab is a walk-in panoramic room — a continuous projection band around four
+walls, eight WUXGA projectors warped and edge-blended by Pixelwarp. `/craive` renders the
+solar system for it as a spaceship whose walls are all windows: the room *is* the vehicle,
+the audience walks around inside it, and the nine voices are heard from wherever it has
+flown to. Fly past Jupiter and it goes by down one side of the room.
+
+```sh
+target/solarsystem.exe --ws-url ws://localhost:8888/osc
+```
+
+then open <http://localhost:8080/craive> fullscreen on the desktop that spans the eight
+projectors, and let Pixelwarp do the warping and blending.
+
+### Flying
+
+| | |
+|---|---|
+| <kbd>↑</kbd> <kbd>↓</kbd> | forward and back along the heading |
+| <kbd>←</kbd> <kbd>→</kbd> | rotate left and right |
+| <kbd>Page Up</kbd> <kbd>Page Dn</kbd> | climb and dive |
+| <kbd>Shift</kbd> | hold to fly four times faster |
+
+Yaw only — the heading never pitches or rolls, because a roomful of people standing up
+should not have the horizon tilt under them. Speeds are deliberately unhurried: 14 scene
+units per second against an Earth orbit of radius 12 and a Neptune orbit of 78.
+
+The ship starts 30 units out and 6 *below* the ecliptic, facing the Sun, which therefore
+opens centred on the front wall. Below rather than above on purpose: the band is not
+symmetric, reaching 23.6° above the horizon but only 13.6° below, so looking *up* at the
+disc gives it most of the room's pixels to spread into. From exactly within the plane the
+system collapses to a line on the horizon; a little altitude opens it into a disc.
+
+### The output contract
+
+Every number comes from the lab's content-creator spec (J. Parkman Carter, RPI, 2015) and
+is declared in the `BAND` constant at the top of `webapp/js/craive.js`:
+
+| | |
+|---|---|
+| band (authoring) | 1200 × 11,636 px, 9.697:1 — physical pixels around the room |
+| output (delivery) | 1200 × 15,360 px, 12.8:1 — 8 × 1920, what Pixelwarp ingests |
+| front wall centre | band x = 6,317 |
+| entrance gap | band x 11,165–11,636, projected black |
+| vertical field | 37.13°, centred 5° above the horizon |
+
+The 132% horizontal "fatten" the manual pipeline applies is inherent here rather than a
+separate step: the shader spreads the 11,636-px band across all 15,360 output pixels, so
+rendering *is* the stretch. Circles look fat on a desktop preview and round on the wall.
+
+### How it is rendered
+
+A `THREE.CubeCamera` photographs the scene in all six directions from the ship, and one
+full-screen fragment shader unwraps that cube into the band — the crop, equirectangular
+conversion and recomposition of the lab's manual Photoshop pipeline fused into a single
+sampling:
+
+```glsl
+if (vUv.x >= uEntrance.x && vUv.x <= uEntrance.y) { black; return; }
+float theta = (vUv.x - uFrontFrac) * 2.0 * PI + uYaw;
+float phi   = uElevCenter + (vUv.y - 0.5) * uVFov;
+vec3 dir = vec3(sin(theta) * cos(phi), sin(phi), -cos(theta) * cos(phi));
+gl_FragColor = textureCube(uCube, dir);
+```
+
+Two consequences worth knowing if you extend it. Nothing drawn in HTML can appear on the
+band, because a cube capture cannot photograph a DOM overlay — the body labels are
+in-scene `THREE.Sprite`s for exactly this reason, and the HUD in the corner is for
+whoever is driving, not for the wall. And the cube faces are far smaller than a desktop
+canvas, so anything sized in screen pixels needs its own constant: the beacons and labels
+take a smaller scale factor here than in the desktop view, and the star field a smaller
+point size.
+
+`/craive` and `/` share `webapp/js/scenery.js`, which owns the scene and the simulation.
+Only the projection, the controls and the listener differ, which is what keeps the two
+views at feature parity as the demo grows.
+
+### What goes out over OSC
+
+The same schema, with one difference: the listener is not a body. `/ss/listener` reports
+index **−1** and the name `CRAIVE`, and its position is the ship's. Every one of the nine
+bodies stays spatialised — there is no "you are here" body to duck. The ship's own
+velocity feeds the Doppler shift alongside the planets', so flying hard at Jupiter bends
+its pitch up.
+
+### Checking it on the wall
+
+* The canvas is exactly 15,360 × 1,200 — `document.getElementById('band').width`.
+* With the heading at 0° the Sun sits at band x ≈ 6,317, centred on the front wall.
+* The span 11,165–11,636 (the right-hand end of the canvas) is black.
+* Pressing <kbd>←</kbd> slides the scene to the *right*.
+* Nothing important sits in a corner or the entrance.
+
+
 ## Pointing it at your bridge
 
 There is one setting, and two places to put it.
@@ -515,13 +610,17 @@ src/main/resources/META-INF/native-image/com.ebremer/
   solarsystem/             reachability metadata, agent generated
   solarsystem-webapp/      reachability metadata, hand written
 src/main/resources/webapp/
-  index.html  css/style.css
+  index.html        the desktop view
+  craive.html       the CRAIVE Lab band, served at /craive
+  css/style.css
   js/bodies.js      orbital elements, Kepler solver, synth recipes
+  js/scenery.js     the scene and the simulation, shared by both views
   js/audio.js       Web Audio graph, panners, listener, distance model
   js/oscbridge.js   osc.js transport and the bundle builder
   js/radar.js       the azimuth dial
   js/ui.js          panels and controls
-  js/main.js        scene, loop, picking, wiring
+  js/main.js        desktop view: camera follow, picking, wiring
+  js/craive.js      band view: cube capture, unwrap shader, flight
   vendor/           three.js 0.180.0, OrbitControls, osc.js 2.4.5
 tools/
   osc-monitor.py  osc-monitor.js

@@ -31,6 +31,13 @@ public class StaticServlet extends HttpServlet {
     private static final String CLASSPATH_ROOT = "webapp";
     private static final String WELCOME = "index.html";
 
+    /**
+     * Extensionless routes. /craive is the RPI CRAIVE Lab's wrap-around band view, named
+     * after the room rather than after a file so it can be typed at a projector wall.
+     */
+    private static final Map<String, String> ROUTES = Map.of(
+            "/craive", "/craive.html");
+
     private static final Map<String, String> CONTENT_TYPES = Map.ofEntries(
             Map.entry("html", "text/html;charset=utf-8"),
             Map.entry("css", "text/css;charset=utf-8"),
@@ -64,6 +71,7 @@ public class StaticServlet extends HttpServlet {
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         String path = req.getServletPath();
         if (req.getPathInfo() != null) path += req.getPathInfo();
+        path = ROUTES.getOrDefault(path, path);
         if (path.isEmpty() || path.endsWith("/")) path += WELCOME;
 
         if (!isSafe(path)) {

@@ -9,20 +9,12 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/OrbitControls.js';
-import {
-  BODIES, displayRadius, orbitPoints, scenePosition, julianDate, centuries, J2000
-} from './bodies.js';
+import { BODIES, displayRadius, julianDate, centuries, J2000 } from './bodies.js';
+import { SolarSystemScene } from './scenery.js';
 import { AudioEngine, computeField } from './audio.js';
 import { OscBridge } from './oscbridge.js';
 import { Radar } from './radar.js';
 import { UI, speedFromSlider, savedWsUrl, checkWsUrl } from './ui.js';
-
-const DEG = Math.PI / 180;
-const ORBIT_SEGMENTS = 512;
-/** Half-width of the finite difference used for orbital velocity, in days. */
-const VELOCITY_H_DAYS = 0.5;
-/** Rebuild orbit lines once the epoch has drifted this far, in Julian centuries. */
-const LINE_REBUILD_T = 0.02;
 
 const state = {
   epochJd: julianDate(Date.now()),
@@ -45,7 +37,6 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 
-const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.05, 6000);
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -56,204 +47,28 @@ controls.minDistance = 1.0;
 controls.maxDistance = 900;
 controls.zoomSpeed = 0.8;
 
-// Enough fill light that Neptune is not a silhouette; the point light does the modelling.
-scene.add(new THREE.AmbientLight(0x4a5f80, 0.55));
+// ---------------------------------------------------------------- scene
 
-// ---------------------------------------------------------------- textures
-
-/** Soft radial falloff, used for the body markers and the Sun's corona. */
-function glowTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const g = c.getContext('2d');
-  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  grad.addColorStop(0.00, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.22, 'rgba(255,255,255,0.55)');
-  grad.addColorStop(0.55, 'rgba(255,255,255,0.13)');
-  grad.addColorStop(1.00, 'rgba(255,255,255,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 128, 128);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
-/** Latitudinal banding so the spheres are not flat discs of colour. */
-function bodyTexture(color, bands) {
-  const c = document.createElement('canvas');
-  c.width = 4;
-  c.height = 256;
-  const g = c.getContext('2d');
-  const base = new THREE.Color(color);
-  const tint = new THREE.Color();
-  for (let y = 0; y < 256; y++) {
-    const lat = y / 255;
-    const n = Math.sin(lat * Math.PI * bands) * 0.5
-            + Math.sin(lat * Math.PI * bands * 2.7 + 1.3) * 0.25
-            + (Math.random() - 0.5) * 0.12;
-    tint.copy(base).multiplyScalar(1 + n * 0.17);
-    g.fillStyle = tint.getStyle();
-    g.fillRect(0, y, 4, 1);
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
-/** Body name rendered to a sprite texture. Returns the aspect ratio for scaling. */
-function labelTexture(text, style) {
-  const font = '500 44px system-ui, -apple-system, "Segoe UI", sans-serif';
-  const probe = document.createElement('canvas').getContext('2d');
-  probe.font = font;
-  const w = Math.ceil(probe.measureText(text).width) + 20;
-  const h = 60;
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  const g = c.getContext('2d');
-  g.font = font;
-  g.textBaseline = 'middle';
-  g.shadowColor = 'rgba(0,0,0,0.95)';
-  g.shadowBlur = 9;
-  g.fillStyle = style;
-  g.fillText(text, 10, h / 2);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.minFilter = THREE.LinearFilter;
-  return { texture: t, aspect: w / h };
-}
-
-// ---------------------------------------------------------------- scene contents
-
-function addStars(count = 4200, radius = 2200) {
-  const pos = new Float32Array(count * 3);
-  const col = new Float32Array(count * 3);
-  const c = new THREE.Color();
-  for (let i = 0; i < count; i++) {
-    const u = Math.random() * 2 - 1;
-    const th = Math.random() * Math.PI * 2;
-    const s = Math.sqrt(1 - u * u);
-    const r = radius * (0.85 + Math.random() * 0.15);
-    pos[i * 3] = r * s * Math.cos(th);
-    pos[i * 3 + 1] = r * u;
-    pos[i * 3 + 2] = r * s * Math.sin(th);
-    const bright = Math.pow(Math.random(), 2.2);
-    c.setHSL(0.55 + (Math.random() - 0.5) * 0.16, 0.25 * Math.random(), 0.35 + 0.6 * bright);
-    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({
-    size: 1.6, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0.9
-  })));
-}
-addStars();
-
-const glowMap = glowTexture();
-let corona = null;
-
-const objects = BODIES.map((body, index) => {
-  const isSun = index === 0;
-  const radius = displayRadius(body);
-  const style = '#' + body.color.toString(16).padStart(6, '0');
-
-  const map = bodyTexture(body.color, isSun ? 3 : (body.radiusKm > 20000 ? 15 : 6));
-  const material = isSun
-    ? new THREE.MeshBasicMaterial({ map })
-    : new THREE.MeshStandardMaterial({ map, roughness: 0.88, metalness: 0.04 });
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 48, 32), material);
-  mesh.userData.index = index;
-  scene.add(mesh);
-
-  if (body.ring) {
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(radius * body.ring.inner, radius * body.ring.outer, 96, 1),
-      new THREE.MeshBasicMaterial({
-        color: body.ring.color, side: THREE.DoubleSide,
-        transparent: true, opacity: 0.45, depthWrite: false
-      })
-    );
-    ring.rotation.set(-Math.PI / 2 + body.ring.tilt * DEG, 0, 0);
-    mesh.add(ring);
-  }
-
-  if (isSun) {
-    corona = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: glowMap, color: 0xffb347, transparent: true,
-      blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.85
-    }));
-    corona.scale.setScalar(radius * 8);
-    scene.add(corona);
-  }
-
-  // A constant-screen-size beacon: keeps distant planets visible and easy to click.
-  const marker = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: glowMap, color: body.color, transparent: true,
-    blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.5
-  }));
-  marker.userData.index = index;
-  scene.add(marker);
-
-  const label = labelTexture(body.name, style);
-  const labelSprite = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: label.texture, transparent: true, depthWrite: false, opacity: 0.85
-  }));
-  labelSprite.center.set(0.5, 0);
-  scene.add(labelSprite);
-
-  let orbit = null;
-  if (body.elements) {
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((ORBIT_SEGMENTS + 1) * 3), 3));
-    orbit = new THREE.Line(geo, new THREE.LineBasicMaterial({
-      color: body.color, transparent: true, opacity: 0.26
-    }));
-    scene.add(orbit);
-  }
-
-  return { body, index, radius, mesh, marker, labelSprite, labelAspect: label.aspect, orbit };
-});
-
-const sunLight = new THREE.PointLight(0xfff1d6, 2.6, 0, 0); // decay 0 keeps Neptune lit
-scene.add(sunLight);
-
-const pickables = objects.flatMap((o) => [o.mesh, o.marker]);
-
-// ---------------------------------------------------------------- simulation state
-
-const positions = BODIES.map(() => new THREE.Vector3());
-const velocities = BODIES.map(() => new THREE.Vector3());
-const phases = new Float64Array(BODIES.length);
+const sky = new SolarSystemScene();
+const scene = sky.scene;
+const { objects, positions, velocities, phases, pickables } = sky;
 const field = [];
 
-const scratch = [
-  { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }
-];
-const vecA = new THREE.Vector3();
 const fwd = new THREE.Vector3(0, 0, -1);
 const up = new THREE.Vector3(0, 1, 0);
+const listener = { position: positions[state.listener], velocity: velocities[state.listener], index: state.listener, name: BODIES[state.listener].name };
 
-function updateBodies(T) {
-  const hT = VELOCITY_H_DAYS / 36525;
-  for (let n = 0; n < BODIES.length; n++) {
-    const body = BODIES[n];
-    const p = scenePosition(body, T, state.tiltGain, scratch[0]);
-    positions[n].set(p.x, p.y, p.z);
-    phases[n] = p.meanAnomaly;
-
-    // Central difference gives a velocity that already accounts for the radial warp.
-    const ahead = scenePosition(body, T + hT, state.tiltGain, scratch[1]);
-    const behind = scenePosition(body, T - hT, state.tiltGain, scratch[2]);
-    velocities[n]
-      .set(ahead.x - behind.x, ahead.y - behind.y, ahead.z - behind.z)
-      .divideScalar(2 * VELOCITY_H_DAYS)   // scene units per day
-      .multiplyScalar(state.daysPerSecond); // scene units per real second
-  }
-}
-
+/**
+ * Where the listener stands and which way it faces. On a planet that is the body's own
+ * position and its direction of travel, so the whole sound field rotates as it orbits.
+ */
 function updateListenerFrame() {
   const n = state.listener;
+  listener.position = positions[n];
+  listener.velocity = velocities[n];
+  listener.index = n;
+  listener.name = BODIES[n].name;
+
   if (state.headingMode === 'camera') {
     camera.getWorldDirection(fwd);
     up.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
@@ -272,22 +87,6 @@ function updateListenerFrame() {
   up.copy(positions[n]).cross(velocities[n]);       // orbital angular momentum
   if (up.lengthSq() < 1e-14) up.set(0, 1, 0); else up.normalize();
   up.addScaledVector(fwd, -up.dot(fwd)).normalize(); // exactly orthogonal
-}
-
-let lineEpoch = null;
-let lineTilt = null;
-
-function refreshOrbitLines(T) {
-  if (lineEpoch !== null && lineTilt === state.tiltGain && Math.abs(T - lineEpoch) < LINE_REBUILD_T) return;
-  lineEpoch = T;
-  lineTilt = state.tiltGain;
-  for (const o of objects) {
-    if (!o.orbit) continue;
-    const attr = o.orbit.geometry.attributes.position;
-    attr.array.set(orbitPoints(o.body, T, state.tiltGain, ORBIT_SEGMENTS));
-    attr.needsUpdate = true;
-    o.orbit.geometry.computeBoundingSphere();
-  }
 }
 
 // ---------------------------------------------------------------- camera follow
@@ -314,10 +113,7 @@ function selectBody(index) {
   transition = 0;
   ui.setSelected(index);
   oscBridge.sendSelect(index, BODIES[index].name);
-  for (const o of objects) {
-    o.marker.material.opacity = o.index === index ? 0.95 : 0.5;
-    if (o.orbit) o.orbit.material.opacity = o.index === index ? 0.7 : 0.26;
-  }
+  sky.setHighlight(index);
 }
 
 // ---------------------------------------------------------------- picking
@@ -411,10 +207,7 @@ const ui = new UI(BODIES, {
   onHeading: (mode) => { state.headingMode = mode; },
   onLabels: (on) => {
     state.showDecor = on;
-    for (const o of objects) {
-      o.labelSprite.visible = on;
-      if (o.orbit) o.orbit.visible = on;
-    }
+    sky.setDecor(on);
   },
   onOscRate: (hz) => { state.oscRateHz = hz; },
   onWsUrl: connectOsc
@@ -473,10 +266,10 @@ function tick() {
   const jd = state.epochJd + state.simDays;
   const T = centuries(jd);
 
-  updateBodies(T);
-  refreshOrbitLines(T);
+  sky.step(T, state.tiltGain, state.daysPerSecond);
+  sky.refreshOrbitLines(T, state.tiltGain);
   updateListenerFrame();
-  computeField(positions, velocities, state.listener, fwd, up, field);
+  computeField(positions, velocities, listener, fwd, up, field);
 
   // Camera rides along with the selected body while leaving orbit and zoom to the user.
   controls.update();
@@ -492,21 +285,10 @@ function tick() {
   }
   camera.position.copy(controls.target).add(camOffset);
 
-  for (const o of objects) {
-    const p = positions[o.index];
-    o.mesh.position.copy(p);
-    o.marker.position.copy(p);
-    // Constant apparent size, roughly 30 px tall at a 900 px viewport.
-    const d = vecA.copy(p).sub(camera.position).length();
-    o.marker.scale.setScalar(Math.max(d * 0.030, o.radius * 2.4));
-    const ls = Math.max(d * 0.022, 0.35);
-    o.labelSprite.scale.set(ls * o.labelAspect, ls, 1);
-    o.labelSprite.position.copy(p);
-    o.labelSprite.position.y += o.radius + d * 0.020;
-  }
-  if (corona) corona.position.copy(positions[0]);
+  // Beacons and labels sized for a ~900 px tall perspective viewport.
+  sky.syncVisuals(camera.position, 0.030, 0.022);
 
-  audio.update(positions, field, state.listener, fwd, up, phases);
+  audio.update(positions, field, listener, fwd, up, phases);
   radar.draw(field, state.listener);
   updateHover();
 
@@ -523,7 +305,7 @@ function tick() {
     if (oscAccumulator >= 1 / state.oscRateHz) {
       oscAccumulator = 0;
       oscBridge.sendFrame({
-        positions, field, listenerIndex: state.listener, fwd, up, phases,
+        positions, field, listener, fwd, up, phases,
         simDays: state.simDays, j2000Days: jd - J2000,
         daysPerSecond: state.daysPerSecond, paused: state.paused
       });
@@ -541,8 +323,8 @@ window.addEventListener('resize', () => {
 
 // ---------------------------------------------------------------- start
 
-updateBodies(centuries(state.epochJd));
-refreshOrbitLines(centuries(state.epochJd));
+sky.step(centuries(state.epochJd), state.tiltGain, state.daysPerSecond);
+sky.refreshOrbitLines(centuries(state.epochJd), state.tiltGain);
 controls.target.copy(positions[state.listener]);
 camera.position.copy(controls.target).add(new THREE.Vector3(0, 0.55, 1).setLength(175));
 ui.setSelected(state.listener);
