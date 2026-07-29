@@ -56,7 +56,24 @@
       overflow-y: auto;
     }
     #left-panel li { cursor: pointer; }
-    body.bare #left-panel, body.bare #hud { display: none; }
+
+    /* Time, Audio and OSC, appended by Controls — the same panels as at /. */
+    #right-panel {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 10;
+      width: 262px;
+      max-height: calc(100vh - 32px);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    body.bare #left-panel,
+    body.bare #right-panel,
+    body.bare #hud { display: none; }
 
     /* Ship's name and registry, above the body list. */
     #ship-id {
@@ -135,7 +152,9 @@
     .keys { margin: 20px 0 26px; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 12px; }
     .keys span:nth-child(even) { color: #8ea3c2; text-align: left; }
     .keys span:nth-child(odd) { text-align: right; white-space: nowrap; }
-    button {
+    /* Scoped to the launch card: a bare `button` rule here would come after style.css
+       and turn every control-panel button into a full-width blue slab. */
+    .card button {
       width: 100%;
       padding: 12px;
       font: 600 14px/1 system-ui, sans-serif;
@@ -146,7 +165,7 @@
       border-radius: 7px;
       cursor: pointer;
     }
-    button:hover { background: #8ac4ff; }
+    .card button:hover { background: #8ac4ff; }
   </style>
 </head>
 <body>
@@ -164,10 +183,11 @@
     <span class="k">el</span> elevation &middot; bar is level</p>
 </aside>
 
+<aside id="right-panel"></aside>
+
 <div id="hud">
   <div id="hud-position">&mdash;</div>
   <div id="hud-nearest">&mdash;</div>
-  <div id="hud-status">OSC: starting&hellip;</div>
   <div id="hud-keys">&uarr;&darr; fly &middot; &larr;&rarr; turn &middot; PgUp/PgDn climb &middot; Shift boost
     &middot; click a body to fly to it &middot; H hides the panels</div>
 </div>

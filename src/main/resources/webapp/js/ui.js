@@ -45,6 +45,18 @@ export function checkWsUrl(url) {
   return null;
 }
 
+/**
+ * Whether a key event is going into a text field, in which case it is typing rather than
+ * a shortcut. Sliders and checkboxes do not count, so the keyboard still works right
+ * after nudging one. Guards against a non-element target too: a synthesised event can be
+ * aimed at the document, which has no matches().
+ */
+export function typingIn(target) {
+  return !!target && target.nodeType === 1 && (
+    (target.tagName === 'INPUT' && !['range', 'checkbox', 'radio', 'button'].includes(target.type))
+    || target.tagName === 'TEXTAREA' || target.isContentEditable);
+}
+
 /** Slider position 0-1000 to simulation rate in days per second, logarithmically. */
 export const speedFromSlider = (v) => 0.05 * Math.pow(6000, v / 1000);
 export const sliderFromSpeed = (d) => Math.round((Math.log(d / 0.05) / Math.log(6000)) * 1000);
@@ -115,21 +127,70 @@ export class BodyList {
   }
 }
 
-export class UI {
-  constructor(bodies, handlers) {
-    this.bodies = bodies;
+/**
+ * The Time, Audio and OSC panels, which are identical in both front ends. Built here
+ * rather than written into each page's HTML so the desktop view and the CRAIVE band
+ * cannot end up with different controls.
+ *
+ * @param options.heading  include the "face direction of travel" switch. Only the desktop
+ *        view has it: on the band the listener always faces the way the ship is pointing.
+ */
+export class Controls {
+  constructor(root, handlers, options = {}) {
     this.h = handlers;
-    this.selected = -1;
-    this.list = new BodyList($('body-list'), bodies, (index) => handlers.onSelect(index));
-    this.#wire();
+    this.serverWsUrl = '';
+    this.activeWsUrl = '';
+    root.insertAdjacentHTML('beforeend', `
+      <section class="panel">
+        <h2>Time</h2>
+        <div class="row">
+          <button id="btn-pause" class="wide">Pause</button>
+          <button id="btn-now">Now</button>
+        </div>
+        <label class="ctl">
+          <span>Rate <output id="out-speed">8.0 d/s</output></span>
+          <input id="in-speed" type="range" min="0" max="1000" value="583">
+        </label>
+        <label class="ctl">
+          <span>Orbit tilt <output id="out-tilt">1.0&times;</output></span>
+          <input id="in-tilt" type="range" min="10" max="80" value="10">
+        </label>
+        <p class="readout"><span id="out-date">&mdash;</span> &middot; JD <span id="out-jd">&mdash;</span></p>
+      </section>
+
+      <section class="panel">
+        <h2>Audio</h2>
+        <label class="ctl">
+          <span>Volume <output id="out-volume">80%</output></span>
+          <input id="in-volume" type="range" min="0" max="100" value="80">
+        </label>
+        <label class="check"><input id="in-doppler" type="checkbox" checked> Doppler shift</label>
+        ${options.heading
+          ? '<label class="check"><input id="in-heading" type="checkbox" checked> Face direction of travel</label>'
+          : ''}
+        <label class="check"><input id="in-labels" type="checkbox" checked> Labels and orbits</label>
+        <button id="btn-audio" class="wide">Start audio</button>
+      </section>
+
+      <section class="panel">
+        <h2>OSC <span id="osc-dot" class="dot"></span></h2>
+        <p id="osc-status" class="readout">connecting&hellip;</p>
+        <label class="field" for="in-ws-url">WebSocket server</label>
+        <div class="row">
+          <input id="in-ws-url" type="text" spellcheck="false" placeholder="ws://localhost:8888/osc">
+          <button id="btn-ws-apply">Go</button>
+        </div>
+        <label class="ctl">
+          <span>Send rate <output id="out-osc-rate">30 Hz</output></span>
+          <input id="in-osc-rate" type="range" min="0" max="60" value="30">
+        </label>
+        <p id="osc-stats" class="readout">&mdash;</p>
+      </section>`);
+    this.#wire(options);
   }
 
-  #wire() {
+  #wire(options) {
     const h = this.h;
-
-    $('gate-start').addEventListener('click', () => { this.#closeGate(); h.onStartAudio(); });
-    $('gate-silent').addEventListener('click', () => this.#closeGate());
-
     $('btn-pause').addEventListener('click', () => h.onTogglePause());
     $('btn-now').addEventListener('click', () => h.onNow());
     $('btn-audio').addEventListener('click', () => h.onToggleAudio());
@@ -152,8 +213,10 @@ export class UI {
     });
 
     $('in-doppler').addEventListener('change', (e) => h.onDoppler(e.target.checked));
-    $('in-heading').addEventListener('change', (e) => h.onHeading(e.target.checked ? 'orbit' : 'camera'));
     $('in-labels').addEventListener('change', (e) => h.onLabels(e.target.checked));
+    if (options.heading) {
+      $('in-heading').addEventListener('change', (e) => h.onHeading(e.target.checked ? 'orbit' : 'camera'));
+    }
 
     $('in-osc-rate').addEventListener('input', (e) => {
       const hz = +e.target.value;
@@ -170,9 +233,57 @@ export class UI {
     };
     $('btn-ws-apply').addEventListener('click', applyWsUrl);
     $('in-ws-url').addEventListener('keydown', (e) => { if (e.key === 'Enter') applyWsUrl(); });
+  }
+
+  setPaused(paused) { $('btn-pause').textContent = paused ? 'Resume' : 'Pause'; }
+  setAudioRunning(running) { $('btn-audio').textContent = running ? 'Stop audio' : 'Start audio'; }
+  setServerWsUrl(url) { this.serverWsUrl = url || ''; }
+
+  setActiveWsUrl(url) {
+    this.activeWsUrl = url;
+    if (document.activeElement !== $('in-ws-url')) $('in-ws-url').value = url || '';
+  }
+
+  setOscState(state, detail) {
+    $('osc-dot').className = 'dot ' + ({
+      connected: 'ok', connecting: 'warn', reconnecting: 'warn', error: 'bad', idle: ''
+    }[state] ?? '');
+    const text = {
+      connected: 'sending to ' + (this.activeWsUrl || 'the bridge'),
+      connecting: 'opening WebSocket…',
+      reconnecting: 'reconnecting…',
+      error: 'error',
+      idle: this.activeWsUrl ? 'not connected' : 'set a WebSocket server above'
+    }[state] ?? state;
+    $('osc-status').textContent = detail ? `${text} — ${detail}` : text;
+  }
+
+  /** Only the page's own send count is knowable; what the bridge does next is not. */
+  setOscStats(sent) { $('osc-stats').textContent = `${sent} bundles sent`; }
+
+  setTime(jd) {
+    $('out-date').textContent = calendar(jd);
+    $('out-jd').textContent = jd.toFixed(2);
+  }
+}
+
+export class UI {
+  constructor(bodies, handlers) {
+    this.bodies = bodies;
+    this.h = handlers;
+    this.selected = -1;
+    this.list = new BodyList($('body-list'), bodies, (index) => handlers.onSelect(index));
+    this.controls = new Controls($('right-panel'), handlers, { heading: true });
+    this.#wire();
+  }
+
+  #wire() {
+    const h = this.h;
+    $('gate-start').addEventListener('click', () => { this.#closeGate(); h.onStartAudio(); });
+    $('gate-silent').addEventListener('click', () => this.#closeGate());
 
     document.addEventListener('keydown', (e) => {
-      if (e.target.matches('input, textarea')) return;
+      if (typingIn(e.target)) return;
       if (e.key >= '1' && e.key <= '9') {
         const index = +e.key - 1;
         if (index < this.bodies.length) h.onSelect(index);
@@ -200,54 +311,28 @@ export class UI {
     $('here-facts').textContent = body.facts;
   }
 
-  setAudioRunning(running) {
-    $('btn-audio').textContent = running ? 'Stop audio' : 'Start audio';
-  }
+  setAudioRunning(running) { this.controls.setAudioRunning(running); }
 
-  setPaused(paused) {
-    $('btn-pause').textContent = paused ? 'Resume' : 'Pause';
-  }
+  setPaused(paused) { this.controls.setPaused(paused); }
 
   /** Remembers the URL this server suggests, which the page can fall back to. */
-  setServerWsUrl(url) {
-    this.serverWsUrl = url || '';
-  }
+  setServerWsUrl(url) { this.controls.setServerWsUrl(url); }
 
   /** Records where osc.js is actually pointed. */
-  setActiveWsUrl(url) {
-    this.activeWsUrl = url;
-    if (document.activeElement !== $('in-ws-url')) $('in-ws-url').value = url || '';
-  }
+  setActiveWsUrl(url) { this.controls.setActiveWsUrl(url); }
 
-  setOscState(state, detail) {
-    const dot = $('osc-dot');
-    dot.className = 'dot ' + ({
-      connected: 'ok', connecting: 'warn', reconnecting: 'warn', error: 'bad', idle: ''
-    }[state] ?? '');
-
-    const text = {
-      connected: 'sending to ' + (this.activeWsUrl || 'the bridge'),
-      connecting: 'opening WebSocket…',
-      reconnecting: 'reconnecting…',
-      error: 'error',
-      idle: this.activeWsUrl ? 'not connected' : 'set a WebSocket server above'
-    }[state] ?? state;
-    $('osc-status').textContent = detail ? `${text} — ${detail}` : text;
-  }
+  setOscState(state, detail) { this.controls.setOscState(state, detail); }
 
   /**
    * Only the page's own send count is available. What happens after the bridge receives a
    * bundle is not something this page can see.
    */
-  setOscStats(sent) {
-    $('osc-stats').textContent = `${sent} bundles sent`;
-  }
+  setOscStats(sent) { this.controls.setOscStats(sent); }
 
   /** Per-frame readouts. Kept to text writes so it stays cheap at 60 fps. */
   update(field, jd, simDays) {
     // Here the highlighted body and the one being stood on are always the same.
     this.list.update(field, this.selected, this.selected);
-    $('out-date').textContent = calendar(jd);
-    $('out-jd').textContent = jd.toFixed(2);
+    this.controls.setTime(jd);
   }
 }

@@ -26,7 +26,7 @@ import { BODIES, julianDate, centuries, J2000 } from './bodies.js';
 import { SolarSystemScene } from './scenery.js';
 import { AudioEngine, computeField } from './audio.js';
 import { OscBridge } from './oscbridge.js';
-import { BodyList, savedWsUrl, checkWsUrl } from './ui.js';
+import { BodyList, Controls, savedWsUrl, checkWsUrl, speedFromSlider, typingIn } from './ui.js';
 
 /** The lab's screen, from `CRAIVE specs for content creators` (J. Parkman Carter, RPI). */
 const BAND = {
@@ -60,10 +60,11 @@ const SHIP = {
   minRadius: 3.2    // never fly into the middle of the Sun
 };
 
+// Defaults match the control panel's initial slider positions.
 const state = {
   epochJd: julianDate(Date.now()),
   simDays: 0,
-  daysPerSecond: 8,
+  daysPerSecond: speedFromSlider(583),
   paused: false,
   tiltGain: 1,
   oscRateHz: 30
@@ -167,7 +168,13 @@ const FLIGHT_KEYS = new Set([
 ]);
 
 window.addEventListener('keydown', (e) => {
+  if (typingIn(e.target)) return; // the panels carry text boxes now
   const k = e.key.toLowerCase();
+  if (k === ' ') { e.preventDefault(); togglePause(); return; }
+  if (k >= '1' && k <= '9' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    flyTo(Number(k) - 1);
+    return;
+  }
   if (k === 'h' && !e.ctrlKey && !e.metaKey && !e.altKey) {
     // Anything in the DOM is projected onto the wall along with the band, so the
     // operator's readouts need a way to get out of the picture.
@@ -314,7 +321,6 @@ const audio = new AudioEngine(BODIES);
 const oscBridge = new OscBridge(BODIES);
 
 const hud = {
-  status: document.getElementById('hud-status'),
   position: document.getElementById('hud-position'),
   nearest: document.getElementById('hud-nearest'),
   gate: document.getElementById('gate')
@@ -324,42 +330,77 @@ const hud = {
 // Nobody stands on a body here, so every row reports one, including the Sun.
 const bodyList = new BodyList(document.getElementById('body-list'), BODIES, flyTo);
 
+function togglePause() {
+  state.paused = !state.paused;
+  controls.setPaused(state.paused);
+}
+
+// The same Time, Audio and OSC panels as the desktop view, built by the shared Controls.
+// No "face direction of travel" switch: on the band the listener is the ship, and it
+// always faces where the ship is pointing.
+const controls = new Controls(document.getElementById('right-panel'), {
+  onTogglePause: togglePause,
+  onNow: () => { state.simDays = 0; state.epochJd = julianDate(Date.now()); },
+  onSpeed: (d) => { state.daysPerSecond = d; },
+  onTilt: (t) => { state.tiltGain = t; },
+  onVolume: (v) => audio.setVolume(v),
+  onDoppler: (on) => audio.setDoppler(on),
+  onLabels: (on) => sky.setDecor(on),
+  onOscRate: (hz) => { state.oscRateHz = hz; },
+  onWsUrl: connectOsc,
+  onToggleAudio: () => {
+    if (audio.running) {
+      audio.stop();
+      controls.setAudioRunning(false);
+      oscBridge.sendAudioState(false);
+    } else {
+      launch();
+    }
+  }
+}, { heading: false });
+
 async function launch() {
-  hud.gate.classList.add('hiding');
-  setTimeout(() => hud.gate.remove(), 600);
+  const gate = document.getElementById('gate');
+  if (gate) {
+    gate.classList.add('hiding');
+    setTimeout(() => gate.remove(), 600);
+  }
   try {
     await audio.start();
+    controls.setAudioRunning(true);
     oscBridge.sendAudioState(true);
   } catch (err) {
     console.error(err);
-    setStatus('audio unavailable: ' + err.message);
+    controls.setOscState('error', 'audio unavailable: ' + err.message);
   }
 }
 
 document.getElementById('gate-start').addEventListener('click', launch);
 
-function setStatus(text) {
-  hud.status.textContent = text;
-}
-
 function connectOsc(url) {
-  if (!url) { setStatus('OSC: no WebSocket server configured'); return; }
+  controls.setActiveWsUrl(url);
+  if (!url) {
+    oscBridge.disconnect();
+    controls.setOscState('idle');
+    return;
+  }
   const problem = checkWsUrl(url);
-  if (problem) { setStatus('OSC: ' + problem); return; }
+  if (problem) {
+    oscBridge.disconnect();
+    controls.setOscState('error', problem);
+    return;
+  }
   oscBridge.connect(url);
 }
 
-oscBridge.addEventListener('state', (e) => {
-  const { state: s, error } = e.detail;
-  setStatus('OSC: ' + (s === 'connected' ? 'streaming to ' + oscBridge.url : s)
-    + (error && s !== 'connected' ? ' — ' + error : ''));
-});
+oscBridge.addEventListener('state', (e) => controls.setOscState(e.detail.state, e.detail.error));
 
 (async () => {
   let serverUrl = '';
   try {
     serverUrl = (await (await fetch('api/config')).json()).wsUrl || '';
   } catch { /* the band still flies without OSC */ }
+  controls.setServerWsUrl(serverUrl);
   connectOsc(savedWsUrl() || serverUrl);
 })();
 
@@ -411,6 +452,8 @@ function tick() {
     hudAccumulator = 0;
     updateHud();
     bodyList.update(field, travel.index, -1);
+    controls.setTime(jd);
+    controls.setOscStats(oscBridge.sent);
   }
 
   // Photograph the whole sky from the ship, then unwrap it onto the band.

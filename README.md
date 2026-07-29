@@ -184,10 +184,16 @@ view assembled from six cube faces has no single camera to offer. Testing bearin
 gives every body the same generous target, which matters when someone is pointing at a
 wall several metres away.
 
-The floating panel on the left is the same body list the desktop view carries — the same
-markup, classes and stylesheet, built by `BodyList` in `webapp/js/ui.js` — showing each
-body's bearing, elevation, distance and level. Clicking a row flies there too. Everything
-in the DOM is projected onto the wall along with the band, so <kbd>H</kbd> hides the lot.
+Both floating panels are the desktop view's, not copies of them. On the left, `BodyList`
+gives each body's bearing, elevation, distance and level, and clicking a row flies there.
+On the right, `Controls` gives the same Time, Audio and OSC panels as `/` — pause, rate,
+orbit tilt, date, volume, Doppler, labels, and the WebSocket server box. Both are built by
+`webapp/js/ui.js` and mounted by each page, so the two front ends cannot end up with
+different controls. The one difference is the "face direction of travel" switch, which
+only `/` has: on the band the listener is the ship and always faces where it points.
+
+Everything in the DOM is projected onto the wall along with the band, so <kbd>H</kbd>
+hides both panels and the HUD for a clean room.
 
 The ship starts 30 units out and 6 *below* the ecliptic, facing the Sun, which therefore
 opens centred on the front wall. Below rather than above on purpose: the band is not

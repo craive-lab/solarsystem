@@ -50,49 +50,8 @@
     <p id="here-facts" class="facts"></p>
   </section>
 
-  <section class="panel">
-    <h2>Time</h2>
-    <div class="row">
-      <button id="btn-pause" class="wide">Pause</button>
-      <button id="btn-now">Now</button>
-    </div>
-    <label class="ctl">
-      <span>Rate <output id="out-speed">8.0 d/s</output></span>
-      <input id="in-speed" type="range" min="0" max="1000" value="583">
-    </label>
-    <label class="ctl">
-      <span>Orbit tilt <output id="out-tilt">1.0&times;</output></span>
-      <input id="in-tilt" type="range" min="10" max="80" value="10">
-    </label>
-    <p class="readout"><span id="out-date">&mdash;</span> &middot; JD <span id="out-jd">&mdash;</span></p>
-  </section>
-
-  <section class="panel">
-    <h2>Audio</h2>
-    <label class="ctl">
-      <span>Volume <output id="out-volume">80%</output></span>
-      <input id="in-volume" type="range" min="0" max="100" value="80">
-    </label>
-    <label class="check"><input id="in-doppler" type="checkbox" checked> Doppler shift</label>
-    <label class="check"><input id="in-heading" type="checkbox" checked> Face direction of travel</label>
-    <label class="check"><input id="in-labels" type="checkbox" checked> Labels and orbits</label>
-    <button id="btn-audio" class="wide">Start audio</button>
-  </section>
-
-  <section class="panel">
-    <h2>OSC <span id="osc-dot" class="dot"></span></h2>
-    <p id="osc-status" class="readout">connecting&hellip;</p>
-    <label class="field" for="in-ws-url">WebSocket server</label>
-    <div class="row">
-      <input id="in-ws-url" type="text" spellcheck="false" placeholder="ws://localhost:8888/osc">
-      <button id="btn-ws-apply">Go</button>
-    </div>
-    <label class="ctl">
-      <span>Send rate <output id="out-osc-rate">30 Hz</output></span>
-      <input id="in-osc-rate" type="range" min="0" max="60" value="30">
-    </label>
-    <p id="osc-stats" class="readout">&mdash;</p>
-  </section>
+  <!-- Time, Audio and OSC are appended here by Controls in js/ui.js, so the
+       CRAIVE band at /craive gets exactly the same panels. -->
 
 </aside>
 
