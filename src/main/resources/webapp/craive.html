@@ -58,6 +58,27 @@
     #left-panel li { cursor: pointer; }
     body.bare #left-panel, body.bare #hud { display: none; }
 
+    /* Ship's name and registry, above the body list. */
+    #ship-id {
+      margin-bottom: 13px;
+      padding-bottom: 11px;
+      border-bottom: 1px solid rgba(126, 168, 214, 0.18);
+    }
+    #ship-id strong {
+      display: block;
+      font-size: 15px;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      color: #e9f2ff;
+    }
+    #ship-id span {
+      display: block;
+      margin-top: 3px;
+      font: 11px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace;
+      letter-spacing: 0.24em;
+      color: #6fb4ff;
+    }
+
     #hud {
       position: fixed;
       left: 14px;
@@ -133,6 +154,10 @@
 <canvas id="band"></canvas>
 
 <aside id="left-panel" class="panel">
+  <div id="ship-id">
+    <strong>USS CRAIVE</strong>
+    <span>NCC-12180</span>
+  </div>
   <h2>Bodies</h2>
   <ul id="body-list"></ul>
   <p class="legend">click to fly there &middot; <span class="k">az</span> bearing &middot;
