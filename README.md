@@ -690,6 +690,8 @@ Browsers get `"arraybuffer"` and are unaffected.
 
 ## Licences
 
+This project is released under the MIT Licence — see [LICENSE](LICENSE).
+
 three.js (MIT) and osc.js (MIT / GPL-3.0) are vendored under `webapp/vendor/` with their
 licence files. Orbital elements are from JPL/E. M. Standish, *Keplerian Elements for
 Approximate Positions of the Major Planets*.
