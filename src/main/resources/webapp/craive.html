@@ -9,9 +9,9 @@
     1200 x 15360 px, 12.8:1, eight WUXGA projectors warped and blended by Pixelwarp.
     Open fullscreen on the desktop that spans them.
 
-    Everything here is deliberately minimal — the band is the display, and the HUD
-    exists only for whoever is driving. Nothing on the band itself is HTML: it is all
-    in-scene geometry, because a cube capture cannot photograph a DOM overlay.
+    Everything here is deliberately minimal — the band is the display. The operator HUD
+    is drawn into the canvas on the front wall. DOM panels stay off the walls (body.bare)
+    unless P brings them back. Audience labels are in-scene quads, toggled with L.
   -->
   <!--
     The desktop view's stylesheet, for the body list: same markup, same classes, so the
@@ -44,8 +44,9 @@
       image-rendering: auto;
     }
 
-    /* Floating operator panel. Everything in the DOM is projected onto the wall along
-       with the band, so H hides the lot for a clean room. */
+    /* Floating operator panels. They land on the walls with the band, so the show
+       starts in body.bare and P toggles them. The operator HUD is drawn into the
+       canvas on the front wall instead. */
     #left-panel {
       position: fixed;
       top: 16px;
@@ -72,8 +73,7 @@
     }
 
     body.bare #left-panel,
-    body.bare #right-panel,
-    body.bare #hud { display: none; }
+    body.bare #right-panel { display: none; }
 
     /* Ship's name and registry, above the body list. */
     #ship-id {
@@ -97,6 +97,7 @@
     }
 
     #hud {
+      display: none; /* operator readout is in-canvas on the front wall */
       position: fixed;
       left: 14px;
       bottom: 12px;
@@ -189,7 +190,7 @@
   <div id="hud-position">&mdash;</div>
   <div id="hud-nearest">&mdash;</div>
   <div id="hud-keys">&uarr;&darr; fly &middot; &larr;&rarr; turn &middot; PgUp/PgDn climb &middot; Shift boost
-    &middot; click a body to fly to it &middot; H hides the panels</div>
+    &middot; click a body to fly to it &middot; H HUD &middot; L labels &middot; P panels</div>
 </div>
 
 <div id="gate">
@@ -207,7 +208,9 @@
       <span><kbd>Page Up</kbd> <kbd>Page Dn</kbd></span><span>climb and dive</span>
       <span><kbd>Shift</kbd></span><span>hold to fly faster</span>
       <span>click</span><span>fly to a body, on the wall or in the list</span>
-      <span><kbd>H</kbd></span><span>hide the panels for a clean room</span>
+      <span><kbd>H</kbd></span><span>operator HUD on the front wall</span>
+      <span><kbd>L</kbd></span><span>audience labels and orbits</span>
+      <span><kbd>P</kbd></span><span>operator panels (land on the walls)</span>
     </div>
     <button id="gate-start">Launch</button>
   </div>

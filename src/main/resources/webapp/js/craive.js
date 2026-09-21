@@ -4,9 +4,10 @@
  *
  * The lab is a walk-in panoramic room — a continuous projection band around four walls,
  * eight WUXGA projectors warped and edge-blended by Pixelwarp. This page renders that
- * band live: a CubeCamera photographs the scene in all six directions from the ship, and
- * a fragment shader unwraps the cube into the band's 360-degree strip. So there is no
- * "screen" the audience looks at — the system is simply around them.
+ * band live: eight perspective cameras photograph the 37-degree elevation strip from the
+ * ship, and a fragment shader remaps those rectilinear slices onto the cylindrical band.
+ * A 2048 cubemap (side faces only) is the fallback if the GPU cannot hold the slice atlas.
+ * So there is no "screen" the audience looks at — the system is simply around them.
  *
  * Geometry is the lab's published content-creator spec:
  *
@@ -27,6 +28,9 @@ import { SolarSystemScene } from './scenery.js';
 import { AudioEngine, computeField } from './audio.js';
 import { OscBridge } from './oscbridge.js';
 import { BodyList, Controls, savedWsUrl, checkWsUrl, speedFromSlider, typingIn } from './ui.js';
+import { bandDirection } from './bandMath.js';
+import { BandCapture } from './bandCapture.js';
+import { OperatorHud } from './operatorHud.js';
 
 /** The lab's screen, from `CRAIVE specs for content creators` (J. Parkman Carter, RPI). */
 const BAND = {
@@ -38,7 +42,9 @@ const BAND = {
   entranceEnd: 11636,
   elevationCenter: 5,  // degrees above the horizon at the band's vertical centre
   verticalFov: 37.13,  // degrees of elevation the band height spans
-  cubeSize: 1024       // per cube face; raise toward 2048+ if the GPU keeps up
+  slices: 8,           // Pixelwarp strips; capture starts at 12 and may drop toward this
+  overlapPx: 8,        // half-width of the cylindrical crossfade at each seam
+  cubeSize: 2048       // fallback cubemap, side faces only
 };
 
 /**
@@ -67,80 +73,48 @@ const state = {
   daysPerSecond: speedFromSlider(583),
   paused: false,
   tiltGain: 1,
-  oscRateHz: 30
+  oscRateHz: 30,
+  labels: true,
+  operatorHud: true
 };
+
+document.body.classList.add('bare');
 
 // ---------------------------------------------------------------- renderer
 
 const canvas = document.getElementById('band');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: false,
+  powerPreference: 'high-performance',
+  logarithmicDepthBuffer: true
+});
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.setPixelRatio(1);
 
-// Render at the Pixelwarp canvas size when the GPU allows; otherwise at the widest it
-// does, and let CSS scale it out to the spanned desktop. The aspect is what matters.
-const maxTexture = renderer.capabilities.maxTextureSize;
-const outW = Math.min(BAND.outputWidth, maxTexture);
-const outH = Math.max(1, Math.round(outW * (BAND.height / BAND.outputWidth)));
+// Always the Pixelwarp canvas. If the GPU cannot hold 60 fps we drop capture quality,
+// never the buffer size (no CSS-upscaled smaller render).
+const outW = BAND.outputWidth;
+const outH = BAND.height;
 renderer.setSize(outW, outH, false);
+if (canvas.width !== outW || canvas.height !== outH) {
+  console.warn(`band canvas is ${canvas.width}×${canvas.height}, expected ${outW}×${outH}`);
+}
 
-// The star field is captured into 1024 px cube faces rather than a wide desktop canvas,
-// so unattenuated points would read as too large on the wall.
-const sky = new SolarSystemScene({ starSize: 1.1 });
+// Slice cameras render at ~1200 px tall, so unattenuated points stay small on the wall.
+const sky = new SolarSystemScene({ quality: 'band', starSize: 1.2, billboard: 'cylindrical' });
 const { positions, velocities, phases } = sky;
 const field = [];
 
-// ---------------------------------------------------------------- band projection
-
-const cubeTarget = new THREE.WebGLCubeRenderTarget(BAND.cubeSize);
-const cubeCamera = new THREE.CubeCamera(0.05, 9000, cubeTarget);
-sky.scene.add(cubeCamera);
-
-const bandCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-const bandMaterial = new THREE.ShaderMaterial({
-  uniforms: {
-    uCube: { value: cubeTarget.texture },
-    uYaw: { value: 0 },
-    uFrontFrac: { value: BAND.frontCenter / BAND.width },
-    uEntrance: {
-      value: new THREE.Vector2(BAND.entranceStart / BAND.width, BAND.entranceEnd / BAND.width)
-    },
-    uElevCenter: { value: THREE.MathUtils.degToRad(BAND.elevationCenter) },
-    uVFov: { value: THREE.MathUtils.degToRad(BAND.verticalFov) }
-  },
-  depthTest: false,
-  depthWrite: false,
-  vertexShader: `
-    varying vec2 vUv;
-    void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
-  `,
-  fragmentShader: `
-    uniform samplerCube uCube;
-    uniform float uYaw;
-    uniform float uFrontFrac;
-    uniform float uElevCenter;
-    uniform float uVFov;
-    uniform vec2 uEntrance;
-    varying vec2 vUv;
-    void main() {
-      // The entrance corridor pierces the screen; project black there so nobody
-      // walking in is dazzled.
-      if (vUv.x >= uEntrance.x && vUv.x <= uEntrance.y) {
-        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
-        return;
-      }
-      // Band x maps to azimuth about the front wall's centre, band y to elevation.
-      float theta = (vUv.x - uFrontFrac) * 6.283185307179586 + uYaw;
-      float phi = uElevCenter + (vUv.y - 0.5) * uVFov;
-      float cp = cos(phi);
-      vec3 dir = vec3(sin(theta) * cp, sin(phi), -cos(theta) * cp);
-      gl_FragColor = textureCube(uCube, dir);
-    }
-  `
+const capture = new BandCapture({ renderer, scene: sky.scene, band: BAND, outW, outH });
+const operatorHud = new OperatorHud({
+  bandScene: capture.bandScene,
+  frontFrac: BAND.frontCenter / BAND.width,
+  bandHeight: outH,
+  outputWidth: outW
 });
-const bandScene = new THREE.Scene();
-bandScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bandMaterial));
 
 // ---------------------------------------------------------------- the ship
 
@@ -176,8 +150,21 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (k === 'h' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    // Anything in the DOM is projected onto the wall along with the band, so the
-    // operator's readouts need a way to get out of the picture.
+    e.preventDefault();
+    state.operatorHud = !state.operatorHud;
+    operatorHud.setVisible(state.operatorHud);
+    return;
+  }
+  if (k === 'l' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault();
+    state.labels = !state.labels;
+    sky.setDecor(state.labels);
+    controls.setLabels(state.labels);
+    return;
+  }
+  if (k === 'p' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault();
+    // DOM panels land on the walls with the band; default is bare for a show.
     document.body.classList.toggle('bare');
     return;
   }
@@ -235,24 +222,26 @@ const PICK_TOLERANCE = 2.5;
  *
  * The hit test is angular rather than a raycast against the geometry. Partly because
  * that is the natural question on a band ("which body lies along this bearing?"), and
- * partly because it has to be: three.js resolves a Sprite hit by projecting it through
- * `raycaster.camera`, and a panorama assembled from six cube faces has no single camera
- * to offer. Testing bearings instead also gives every body the same generous target,
- * which matters when someone is pointing at a wall several metres away.
+ * partly because it has to be: a panorama assembled from several slice cameras has no
+ * single camera to offer a raycaster. Testing bearings instead also gives every body
+ * the same generous target, which matters when someone is pointing at a wall several
+ * metres away.
  */
 function pickAt(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
   const u = (clientX - rect.left) / rect.width;
   const v = 1 - (clientY - rect.top) / rect.height; // texture v runs bottom-up
   if (u < 0 || u > 1 || v < 0 || v > 1) return -1;
-  const entrance = bandMaterial.uniforms.uEntrance.value;
-  if (u >= entrance.x && u <= entrance.y) return -1; // the entrance shows nothing to hit
+  if (u >= BAND.entranceStart / BAND.width && u <= BAND.entranceEnd / BAND.width) return -1;
+  if (operatorHud.containsUv(u, v)) return -1;
 
-  const theta = (u - BAND.frontCenter / BAND.width) * Math.PI * 2 + ship.yaw;
-  const phi = THREE.MathUtils.degToRad(BAND.elevationCenter)
-            + (v - 0.5) * THREE.MathUtils.degToRad(BAND.verticalFov);
-  const cp = Math.cos(phi);
-  pickDir.set(Math.sin(theta) * cp, Math.sin(phi), -Math.cos(theta) * cp);
+  bandDirection(
+    u, v, ship.yaw,
+    BAND.frontCenter / BAND.width,
+    THREE.MathUtils.degToRad(BAND.elevationCenter),
+    THREE.MathUtils.degToRad(BAND.verticalFov),
+    pickDir
+  );
 
   let best = -1;
   let bestDot = -1;
@@ -345,7 +334,10 @@ const controls = new Controls(document.getElementById('right-panel'), {
   onTilt: (t) => { state.tiltGain = t; },
   onVolume: (v) => audio.setVolume(v),
   onDoppler: (on) => audio.setDoppler(on),
-  onLabels: (on) => sky.setDecor(on),
+  onLabels: (on) => {
+    state.labels = on;
+    sky.setDecor(on);
+  },
   onOscRate: (hz) => { state.oscRateHz = hz; },
   onWsUrl: connectOsc,
   onToggleAudio: () => {
@@ -406,12 +398,15 @@ oscBridge.addEventListener('state', (e) => controls.setOscState(e.detail.state, 
 
 // ---------------------------------------------------------------- loop
 
-const clock = new THREE.Clock();
 let oscAccumulator = 0;
 let hudAccumulator = 0;
+let lastFrameAt = performance.now();
 
 function tick() {
-  const dt = Math.min(clock.getDelta(), 0.1);
+  const now = performance.now();
+  const frameMs = now - lastFrameAt;
+  lastFrameAt = now;
+  const dt = Math.min(frameMs / 1000, 0.1);
   if (!state.paused) state.simDays += dt * state.daysPerSecond;
 
   const jd = state.epochJd + state.simDays;
@@ -428,9 +423,8 @@ function tick() {
 
   computeField(positions, velocities, ship, forward, shipUp, field);
 
-  // The band's angular resolution is about 1852 px per radian vertically, roughly half
-  // that of the desktop view, so beacons and labels want proportionally smaller worlds.
-  sky.syncVisuals(ship.position, 0.016, 0.012);
+  // ~0.9° beacons / 0.7° labels: constant on the wall, independent of cube-face pixels.
+  sky.syncVisuals(ship.position, { markerDeg: 0.9, labelDeg: 0.7 });
 
   audio.update(positions, field, ship, forward, shipUp, phases);
 
@@ -456,28 +450,100 @@ function tick() {
     controls.setOscStats(oscBridge.sent);
   }
 
-  // Photograph the whole sky from the ship, then unwrap it onto the band.
-  cubeCamera.position.copy(ship.position);
-  cubeCamera.update(renderer, sky.scene);
-  bandMaterial.uniforms.uYaw.value = ship.yaw;
-  renderer.render(bandScene, bandCamera);
+  capture.render(ship.position, ship.yaw);
+  capture.observe(frameMs);
+}
+
+function writeCaptureProbe() {
+  const gl = renderer.getContext();
+  const pix = new Uint8Array(4);
+  const at = (x, y) => {
+    gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pix);
+    return [pix[0], pix[1], pix[2], pix[3]];
+  };
+  const frontX = Math.round((BAND.frontCenter / BAND.width) * outW);
+  const entranceX = Math.min(outW - 1, Math.round((BAND.entranceStart / BAND.width) * outW) + 8);
+  const midY = Math.round(outH / 2);
+  const zAxis = new THREE.Vector3();
+  const toShip = new THREE.Vector3();
+  sky.objects[0].marker.getWorldDirection(zAxis);
+  toShip.copy(ship.position).sub(sky.objects[0].marker.position);
+  toShip.y = 0;
+  toShip.normalize();
+  const result = {
+    width: canvas.width,
+    height: canvas.height,
+    mode: capture.mode,
+    label: capture.label,
+    front: at(frontX, midY),
+    entrance: at(entranceX, midY),
+    glError: gl.getError(),
+    billboard: sky.billboard,
+    billboardDot: Number(zAxis.dot(toShip).toFixed(4)),
+    quality: sky.quality,
+    earthMapped: !!(sky.objects[3].mesh.material.map && !sky.objects[3].mesh.material.map.isCanvasTexture),
+    atmosphere: !!sky.atmosphere,
+    milkyWay: !!sky.milkyWay,
+    catalogStars: sky._catalogStars ? sky._catalogStars.geometry.attributes.position.count : 0,
+    sphereSegs: sky.objects[0].mesh.geometry.parameters?.widthSegments ?? 0,
+    sunLightOnSun: sky.sunLight.position.distanceTo(sky.objects[0].mesh.position) < 1e-4,
+    starPointsUnattenuated: (sky._catalogStars || sky._placeholderStars)?.material.sizeAttenuation === false,
+    pixelRatio: renderer.getPixelRatio(),
+    rung: capture.rung,
+    slices: capture.N,
+    samples: capture.samples,
+    bare: document.body.classList.contains('bare'),
+    operatorHud: operatorHud.mesh.visible,
+    labels: state.labels,
+    hudNdcX: Number(operatorHud.mesh.position.x.toFixed(3))
+  };
+  window.__craiveProbe = result;
+  document.documentElement.dataset.probe = JSON.stringify(result);
+  console.info('craive capture probe', result);
 }
 
 function updateHud() {
   const p = ship.position;
+  const heading = ((THREE.MathUtils.radToDeg(ship.yaw) % 360 + 360) % 360).toFixed(0);
   const auFromSun = Math.pow(p.length() / 12, 1 / 0.55); // inverse of the display warp
-  hud.position.textContent =
+  const position =
     `${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}  ·  ${auFromSun.toFixed(2)} AU from the Sun`
-    + `  ·  heading ${((THREE.MathUtils.radToDeg(ship.yaw) % 360 + 360) % 360).toFixed(0)}°`;
+    + `  ·  heading ${heading}°`;
 
   let nearest = 0;
   for (let n = 1; n < field.length; n++) {
     if (field[n].distance < field[nearest].distance) nearest = n;
   }
   const g = field[nearest];
-  hud.nearest.textContent = g
+  const nearestText = g
     ? `nearest: ${BODIES[nearest].name} (${BODIES[nearest].sound.note}) · ${g.distance.toFixed(1)} units · az ${g.azimuth.toFixed(0)}°`
     : '';
+
+  hud.position.textContent = position + `  ·  ${capture.label}`;
+  hud.nearest.textContent = nearestText;
+  operatorHud.draw({
+    heading,
+    position,
+    nearest: nearestText,
+    captureLabel: capture.label,
+    labelsOn: state.labels
+  });
+}
+
+try {
+  if (new URLSearchParams(location.search).get('test') === 'capture') {
+    const run = () => {
+      const T = centuries(state.epochJd);
+      sky.step(T, state.tiltGain, state.daysPerSecond);
+      sky.syncVisuals(ship.position, { markerDeg: 0.9, labelDeg: 0.7 });
+      updateHud();
+      capture.render(ship.position, ship.yaw);
+      writeCaptureProbe();
+    };
+    sky.ready.then(run).catch(run);
+  }
+} catch (err) {
+  document.documentElement.dataset.probe = JSON.stringify({ error: String(err) });
 }
 
 renderer.setAnimationLoop(tick);

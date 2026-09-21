@@ -235,6 +235,7 @@ export class Controls {
     $('in-ws-url').addEventListener('keydown', (e) => { if (e.key === 'Enter') applyWsUrl(); });
   }
 
+  setLabels(on) { $('in-labels').checked = on; }
   setPaused(paused) { $('btn-pause').textContent = paused ? 'Resume' : 'Pause'; }
   setAudioRunning(running) { $('btn-audio').textContent = running ? 'Stop audio' : 'Start audio'; }
   setServerWsUrl(url) { this.serverWsUrl = url || ''; }

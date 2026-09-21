@@ -8,13 +8,28 @@
 
 import * as THREE from 'three';
 import { BODIES, displayRadius, orbitPoints, scenePosition } from './bodies.js';
+import { aimYawOnly, angularSize } from './billboard.js';
 
 const DEG = Math.PI / 180;
 const ORBIT_SEGMENTS = 512;
+/** Earth's axial tilt; the star field is equatorial, the planets sit on the ecliptic. */
+const OBLIQUITY = 23.4393 * DEG;
 /** Half-width of the finite difference used for orbital velocity, in days. */
 const VELOCITY_H_DAYS = 0.5;
 /** Rebuild orbit lines once the epoch has drifted this far, in Julian centuries. */
 const LINE_REBUILD_T = 0.02;
+
+const PLANET_MAPS = {
+  Sun: 'textures/planets/sun.jpg',
+  Mercury: 'textures/planets/mercury.jpg',
+  Venus: 'textures/planets/venus.jpg',
+  Earth: 'textures/planets/earth.jpg',
+  Mars: 'textures/planets/mars.jpg',
+  Jupiter: 'textures/planets/jupiter.jpg',
+  Saturn: 'textures/planets/saturn.jpg',
+  Uranus: 'textures/planets/uranus.jpg',
+  Neptune: 'textures/planets/neptune.jpg'
+};
 
 /** Soft radial falloff, used for the body markers and the Sun's corona. */
 function glowTexture() {
@@ -78,6 +93,89 @@ function labelTexture(text, style) {
   return { texture: t, aspect: w / h };
 }
 
+/** Ring in XY with U along radius, so a 1D Saturn-ring strip maps to the Cassini division. */
+function ringGeometry(inner, outer, segments) {
+  const geo = new THREE.RingGeometry(inner, outer, segments, 1);
+  const pos = geo.attributes.position;
+  const uv = geo.attributes.uv;
+  const span = outer - inner;
+  for (let i = 0; i < pos.count; i++) {
+    const r = Math.hypot(pos.getX(i), pos.getY(i));
+    uv.setXY(i, (r - inner) / span, 0.5);
+  }
+  uv.needsUpdate = true;
+  return geo;
+}
+
+function atmosphereMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color(0.32, 0.52, 1.0) } },
+    vertexShader: `
+      varying vec3 vNormalW;
+      varying vec3 vViewW;
+      void main() {
+        vec4 w = modelMatrix * vec4(position, 1.0);
+        vNormalW = normalize(mat3(modelMatrix) * normal);
+        vViewW = cameraPosition - w.xyz;
+        gl_Position = projectionMatrix * viewMatrix * w;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uColor;
+      varying vec3 vNormalW;
+      varying vec3 vViewW;
+      void main() {
+        float fresnel = pow(1.0 - abs(dot(normalize(vNormalW), normalize(vViewW))), 2.8);
+        gl_FragColor = vec4(uColor * fresnel, fresnel);
+      }
+    `,
+    side: THREE.BackSide,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    toneMapped: true
+  });
+}
+
+/**
+ * RA/Dec → SphereGeometry vertex, matching NASA plate-carrée (RA=0 at texture
+ * centre, RA increases left): phi = π − ra, theta = π/2 − dec.
+ */
+function setFromRaDec(out, ra, dec, radius) {
+  const phi = Math.PI - ra;
+  const theta = Math.PI / 2 - dec;
+  const st = Math.sin(theta);
+  out.set(-st * Math.cos(phi), Math.cos(theta), st * Math.sin(phi)).multiplyScalar(radius);
+}
+
+function catalogStars(stars, radius, pointSize) {
+  const n = stars.length;
+  const pos = new Float32Array(n * 3);
+  const col = new Float32Array(n * 3);
+  const c = new THREE.Color();
+  const p = new THREE.Vector3();
+  for (let i = 0; i < n; i++) {
+    const [ra, dec, mag, bv] = stars[i];
+    setFromRaDec(p, ra, dec, radius);
+    pos[i * 3] = p.x;
+    pos[i * 3 + 1] = p.y;
+    pos[i * 3 + 2] = p.z;
+    const t = Math.max(-0.4, Math.min(2.0, bv));
+    const vis = Math.min(1, Math.pow(10, -0.18 * (mag - 0.15)));
+    c.setHSL(0.62 - Math.min(t + 0.4, 1.7) * 0.34, 0.18 + Math.abs(t - 0.3) * 0.28, 0.42 + 0.52 * vis);
+    col[i * 3] = c.r;
+    col[i * 3 + 1] = c.g;
+    col[i * 3 + 2] = c.b;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return new THREE.Points(geo, new THREE.PointsMaterial({
+    size: pointSize, sizeAttenuation: false, vertexColors: true,
+    transparent: true, opacity: 0.95, depthWrite: false
+  }));
+}
+
 function starField(count, radius) {
   const pos = new Float32Array(count * 3);
   const col = new Float32Array(count * 3);
@@ -103,23 +201,44 @@ function starField(count, radius) {
 }
 
 /**
- * @param options.starSize point size for the star field. The band renders through a cube
- *        capture whose faces are far smaller than a desktop canvas, so unattenuated points
- *        come out proportionally larger there and want a smaller value.
+ * @param options.quality    'desktop' (procedural stripes, 48-seg spheres) or
+ *        'band' (JPL maps, 128-seg spheres, catalog sky). `/` stays on desktop.
+ * @param options.starSize   unattenuated gl_PointSize in framebuffer pixels. On the
+ *        band those pixels are fattened 1.32×, so squares look round on the wall.
+ * @param options.billboard  'sprite' (desktop, faces the camera) or 'cylindrical'
+ *        (band: upright quads that yaw to face the ship, so slice seams agree).
  */
 export class SolarSystemScene {
   constructor(options = {}) {
     this.scene = new THREE.Scene();
-    // Enough fill light that Neptune is not a silhouette; the point light does the modelling.
-    this.scene.add(new THREE.AmbientLight(0x4a5f80, 0.55));
-    this.scene.add(new THREE.PointLight(0xfff1d6, 2.6, 0, 0)); // decay 0 keeps Neptune lit
+    this.quality = options.quality === 'band' ? 'band' : 'desktop';
+    this.billboard = options.billboard === 'cylindrical' ? 'cylindrical' : 'sprite';
+    const band = this.quality === 'band';
+    const sphereSegs = band ? 128 : 48;
+    const sphereRings = band ? 96 : 32;
+    const starRadius = options.starRadius ?? 2200;
 
-    const stars = starField(options.starCount ?? 4200, options.starRadius ?? 2200);
-    stars.material.size = options.starSize ?? 1.6;
-    this.scene.add(stars);
+    // Band: dim fill so the sun light models the globes. Desktop keeps the old fill.
+    this.ambient = new THREE.AmbientLight(0x4a5f80, band ? 0.16 : 0.55);
+    this.scene.add(this.ambient);
+    // Colour is an sRGB hex; three.js ColorManagement linearises it. Intensity is linear.
+    // decay 0 so Neptune at 78 units is still modelled, not black.
+    this.sunLight = new THREE.PointLight(0xfff1d6, band ? 3.6 : 2.6, 0, 0);
+    this.scene.add(this.sunLight);
+
+    this._placeholderStars = starField(options.starCount ?? 4200, starRadius);
+    this._placeholderStars.material.size = options.starSize ?? 1.6;
+    this.scene.add(this._placeholderStars);
+    this._catalogStars = null;
+    this.milkyWay = null;
+    this.atmosphere = null;
+    this.skyRig = null;
 
     const glowMap = glowTexture();
     this.corona = null;
+    this._markerGeo = new THREE.PlaneGeometry(1, 1);
+    this._labelGeo = new THREE.PlaneGeometry(1, 1);
+    this._labelGeo.translate(0, 0.5, 0); // bottom-centre, matching Sprite.center (0.5, 0)
 
     this.objects = BODIES.map((body, index) => {
       const isSun = index === 0;
@@ -128,15 +247,16 @@ export class SolarSystemScene {
 
       const map = bodyTexture(body.color, isSun ? 3 : (body.radiusKm > 20000 ? 15 : 6));
       const material = isSun
-        ? new THREE.MeshBasicMaterial({ map })
+        ? new THREE.MeshBasicMaterial({ map, color: 0xffffff })
         : new THREE.MeshStandardMaterial({ map, roughness: 0.88, metalness: 0.04 });
-      const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 48, 32), material);
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, sphereSegs, sphereRings), material);
       mesh.userData.index = index;
       this.scene.add(mesh);
 
+      let ring = null;
       if (body.ring) {
-        const ring = new THREE.Mesh(
-          new THREE.RingGeometry(radius * body.ring.inner, radius * body.ring.outer, 96, 1),
+        ring = new THREE.Mesh(
+          ringGeometry(radius * body.ring.inner, radius * body.ring.outer, band ? 192 : 96),
           new THREE.MeshBasicMaterial({
             color: body.ring.color, side: THREE.DoubleSide,
             transparent: true, opacity: 0.45, depthWrite: false
@@ -147,27 +267,24 @@ export class SolarSystemScene {
       }
 
       if (isSun) {
-        this.corona = new THREE.Sprite(new THREE.SpriteMaterial({
-          map: glowMap, color: 0xffb347, transparent: true,
-          blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.85
-        }));
+        this.corona = this._makeBillboard(glowMap, 0xffb347, {
+          blending: THREE.AdditiveBlending, opacity: 0.85
+        });
         this.corona.scale.setScalar(radius * 8);
         this.scene.add(this.corona);
       }
 
       // A constant-apparent-size beacon: keeps distant planets visible and easy to click.
-      const marker = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: glowMap, color: body.color, transparent: true,
-        blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.5
-      }));
+      const marker = this._makeBillboard(glowMap, body.color, {
+        blending: THREE.AdditiveBlending, opacity: 0.5
+      });
       marker.userData.index = index;
       this.scene.add(marker);
 
       const label = labelTexture(body.name, style);
-      const labelSprite = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: label.texture, transparent: true, depthWrite: false, opacity: 0.85
-      }));
-      labelSprite.center.set(0.5, 0);
+      const labelSprite = this._makeBillboard(label.texture, 0xffffff, {
+        opacity: 0.85, geometry: this._labelGeo
+      });
       this.scene.add(labelSprite);
 
       let orbit = null;
@@ -181,7 +298,15 @@ export class SolarSystemScene {
         this.scene.add(orbit);
       }
 
-      return { body, index, radius, mesh, marker, labelSprite, labelAspect: label.aspect, orbit };
+      if (band && body.name === 'Earth') {
+        this.atmosphere = new THREE.Mesh(
+          new THREE.SphereGeometry(radius * 1.045, sphereSegs, sphereRings),
+          atmosphereMaterial()
+        );
+        mesh.add(this.atmosphere);
+      }
+
+      return { body, index, radius, mesh, marker, labelSprite, labelAspect: label.aspect, orbit, ring };
     });
 
     this.pickables = this.objects.flatMap((o) => [o.mesh, o.marker]);
@@ -194,6 +319,98 @@ export class SolarSystemScene {
     this._vec = new THREE.Vector3();
     this._lineEpoch = null;
     this._lineTilt = null;
+
+    this.ready = band ? this._loadBandAssets(starRadius, options.starSize ?? 1.2) : Promise.resolve();
+  }
+
+  _configureMap(tex) {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = true;
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  async _loadBandAssets(starRadius, starSize) {
+    const loader = new THREE.TextureLoader();
+    const jobs = [];
+    for (const o of this.objects) {
+      const url = PLANET_MAPS[o.body.name];
+      if (!url) continue;
+      jobs.push(loader.loadAsync(url).then((tex) => {
+        const prev = o.mesh.material.map;
+        o.mesh.material.map = this._configureMap(tex);
+        o.mesh.material.needsUpdate = true;
+        if (prev && prev.isCanvasTexture) prev.dispose();
+      }));
+    }
+    const saturn = this.objects.find((o) => o.body.ring);
+    if (saturn?.ring) {
+      jobs.push(loader.loadAsync('textures/planets/saturn-ring.png').then((tex) => {
+        this._configureMap(tex);
+        tex.wrapS = THREE.ClampToEdgeWrapping;
+        tex.wrapT = THREE.ClampToEdgeWrapping;
+        saturn.ring.material.map = tex;
+        saturn.ring.material.color.set(0xffffff);
+        saturn.ring.material.opacity = 1;
+        saturn.ring.material.transparent = true;
+        saturn.ring.material.needsUpdate = true;
+      }));
+    }
+    jobs.push(loader.loadAsync('textures/sky/milkyway.jpg').then((tex) => {
+      this._configureMap(tex);
+      tex.wrapS = THREE.RepeatWrapping;
+      const sky = new THREE.Mesh(
+        new THREE.SphereGeometry(starRadius * 0.96, 64, 32),
+        new THREE.MeshBasicMaterial({
+          map: tex, side: THREE.BackSide, depthWrite: false, fog: false, color: 0xffffff
+        })
+      );
+      this._ensureSkyRig();
+      this.milkyWay = sky;
+      this.skyRig.add(sky);
+    }));
+    jobs.push(fetch('data/bsc.json').then((r) => r.json()).then((data) => {
+      const pts = catalogStars(data.stars, starRadius, starSize);
+      this._ensureSkyRig();
+      this._catalogStars = pts;
+      this.skyRig.add(pts);
+      this._placeholderStars.visible = false;
+    }));
+    const results = await Promise.allSettled(jobs);
+    const failed = results.filter((r) => r.status === 'rejected');
+    if (failed.length) console.warn('band assets: ' + failed.length + ' failed to load', failed);
+  }
+
+  _ensureSkyRig() {
+    if (this.skyRig) return;
+    this.skyRig = new THREE.Group();
+    // Equatorial sky (Y = celestial north) tilted onto the ecliptic (Y = orbit normal).
+    this.skyRig.rotation.x = OBLIQUITY;
+    this.scene.add(this.skyRig);
+  }
+
+  _makeBillboard(map, color, opts = {}) {
+    if (this.billboard === 'cylindrical') {
+      return new THREE.Mesh(
+        opts.geometry ?? this._markerGeo,
+        new THREE.MeshBasicMaterial({
+          map, color, transparent: true, depthWrite: false,
+          blending: opts.blending ?? THREE.NormalBlending,
+          opacity: opts.opacity ?? 1,
+          fog: false
+        })
+      );
+    }
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map, color, transparent: true, depthWrite: false,
+      blending: opts.blending ?? THREE.NormalBlending,
+      opacity: opts.opacity ?? 1
+    }));
+    if (opts.geometry === this._labelGeo) sprite.center.set(0.5, 0);
+    return sprite;
   }
 
   /**
@@ -238,24 +455,32 @@ export class SolarSystemScene {
   /**
    * Moves the meshes, beacons and labels onto this frame's positions.
    *
-   * @param viewpoint where the scene is being watched from: the camera in the desktop
-   *        view, the cube capture point on the band.
-   * @param markerK  world size per unit of distance, chosen so a beacon holds a constant
-   *        apparent size. It differs between the views because their angular resolutions do.
+   * @param viewpoint where the scene is being watched from: the camera, or the ship.
+   * @param opts.markerDeg  beacon width in degrees of azimuth (constant apparent size).
+   * @param opts.labelDeg   label height in degrees of azimuth.
    */
-  syncVisuals(viewpoint, markerK = 0.030, labelK = 0.022) {
+  syncVisuals(viewpoint, { markerDeg = 1.7, labelDeg = 1.3 } = {}) {
     for (const o of this.objects) {
       const p = this.positions[o.index];
       o.mesh.position.copy(p);
+      if (o.index === 0) this.sunLight.position.copy(p);
       o.marker.position.copy(p);
       const d = this._vec.copy(p).sub(viewpoint).length();
-      o.marker.scale.setScalar(Math.max(d * markerK, o.radius * 2.4));
-      const ls = Math.max(d * labelK, 0.35);
+      const markerW = Math.max(angularSize(d, markerDeg), o.radius * 2.4);
+      o.marker.scale.setScalar(markerW);
+      const ls = Math.max(angularSize(d, labelDeg), 0.35);
       o.labelSprite.scale.set(ls * o.labelAspect, ls, 1);
       o.labelSprite.position.copy(p);
-      o.labelSprite.position.y += o.radius + d * (labelK * 0.9);
+      o.labelSprite.position.y += o.radius + angularSize(d, labelDeg * 0.9);
+      if (this.billboard === 'cylindrical') {
+        aimYawOnly(o.marker, viewpoint);
+        aimYawOnly(o.labelSprite, viewpoint);
+      }
     }
-    if (this.corona) this.corona.position.copy(this.positions[0]);
+    if (this.corona) {
+      this.corona.position.copy(this.positions[0]);
+      if (this.billboard === 'cylindrical') aimYawOnly(this.corona, viewpoint);
+    }
   }
 
   /** Labels and orbit lines together, since they are the same kind of annotation. */

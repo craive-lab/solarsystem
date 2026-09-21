@@ -22,9 +22,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * back as {@code resource:} URLs — so the packaged web app would be unreachable in the
  * native build. Reading the classpath directly works the same way in both.
  *
- * <p>Classpath content is immutable once built, so it is read once and cached in memory;
- * the whole web app is about 2 MB. A {@code --web-dir} is re-read on every request instead,
- * which is the point of that flag.
+ * <p>Classpath content is immutable once built, so it is read once and cached in memory.
+ * A {@code --web-dir} is re-read on every request instead, which is the point of that flag.
  */
 public class StaticServlet extends HttpServlet {
 

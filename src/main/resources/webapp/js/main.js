@@ -285,8 +285,8 @@ function tick() {
   }
   camera.position.copy(controls.target).add(camOffset);
 
-  // Beacons and labels sized for a ~900 px tall perspective viewport.
-  sky.syncVisuals(camera.position, 0.030, 0.022);
+  // Beacons and labels sized for a ~900 px tall perspective viewport (~1.7° / 1.3°).
+  sky.syncVisuals(camera.position, { markerDeg: 1.72, labelDeg: 1.26 });
 
   audio.update(positions, field, listener, fwd, up, phases);
   radar.draw(field, state.listener);

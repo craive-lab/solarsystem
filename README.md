@@ -164,7 +164,9 @@ projectors, and let Pixelwarp do the warping and blending.
 | <kbd>Page Up</kbd> <kbd>Page Dn</kbd> | climb and dive |
 | <kbd>Shift</kbd> | hold to fly four times faster |
 | click | fly to a body, on the wall or in the panel |
-| <kbd>H</kbd> | hide the panels for a clean room |
+| <kbd>H</kbd> | operator HUD on the front wall (in the canvas) |
+| <kbd>L</kbd> | audience labels and orbits |
+| <kbd>P</kbd> | operator panels — they land on the walls, so the show starts without them |
 
 Yaw only — the heading never pitches or rolls, because a roomful of people standing up
 should not have the horizon tilt under them. Speeds are deliberately unhurried: 14 scene
@@ -220,30 +222,47 @@ rendering *is* the stretch. Circles look fat on a desktop preview and round on t
 
 ### How it is rendered
 
-A `THREE.CubeCamera` photographs the scene in all six directions from the ship, and one
-full-screen fragment shader unwraps that cube into the band — the crop, equirectangular
-conversion and recomposition of the lab's manual Photoshop pipeline fused into a single
-sampling:
+Twelve perspective cameras sit on the ship at the top quality rung (30° of azimuth
+each, 37.13° of elevation, optical axis pitched 5° above the horizon). Each strip is
+rendered in linear HDR (half-float) with 4× MSAA, then copied into a non-MSAA 15360×1200
+atlas. A fragment shader remaps those rectilinear slices onto the band's cylindrical
+mapping — azimuth linear in canvas x, elevation linear in canvas y — crossfades 16 px at
+each seam, and applies ACES tone mapping plus sRGB once onto the canvas. The entrance
+strip is scissored off and left black. Logarithmic depth keeps the near 0.05 / star-field
+2200 range honest.
+
+The canvas is always 15360×1200 (`devicePixelRatio` 1). If the GPU cannot hold 60 fps,
+capture quality drops in place: MSAA 4× → 2× → 0, then 12 → 8 → 6 slices, then a 2048
+cubemap of the four side faces. The HUD shows the active rung and the frame rate, and
+appends `dropped` once it has stepped down. `?capture=cube` or `?rung=0..5` lock a rung.
+
+The mapping is the lab's Photoshop pipeline (crop, equirectangular conversion,
+recomposition) as a sample:
 
 ```glsl
 if (vUv.x >= uEntrance.x && vUv.x <= uEntrance.y) { black; return; }
 float theta = (vUv.x - uFrontFrac) * 2.0 * PI + uYaw;
 float phi   = uElevCenter + (vUv.y - 0.5) * uVFov;
 vec3 dir = vec3(sin(theta) * cos(phi), sin(phi), -cos(theta) * cos(phi));
-gl_FragColor = textureCube(uCube, dir);
 ```
 
 Two consequences worth knowing if you extend it. Nothing drawn in HTML can appear on the
-band, because a cube capture cannot photograph a DOM overlay — the body labels are
-in-scene `THREE.Sprite`s for exactly this reason, and the HUD in the corner is for
-whoever is driving, not for the wall. And the cube faces are far smaller than a desktop
-canvas, so anything sized in screen pixels needs its own constant: the beacons and labels
-take a smaller scale factor here than in the desktop view, and the star field a smaller
-point size.
+band, because the capture photographs the three.js scene, not the DOM — the body labels
+are in-scene quads for exactly this reason, and the HUD in the corner is for whoever is
+driving, not for the wall. Beacons and names are yaw-only billboards that face the ship
+(so every slice camera draws the same silhouette) and are sized in degrees of azimuth.
+Stars stay unattenuated `gl_PointSize` pixels: square on the fattened canvas, round on
+the wall.
 
 `/craive` and `/` share `webapp/js/scenery.js`, which owns the scene and the simulation.
-Only the projection, the controls and the listener differ, which is what keeps the two
-views at feature parity as the demo grows.
+Only the projection, the controls, the listener and the *quality* differ. `/craive` loads
+2K JPL/NASA equirectangular maps (anisotropy 8), 128-segment spheres, a Saturn ring with
+alpha, an Earth limb atmosphere, a PointLight that rides the Sun in linear colour, and an
+8K NASA star map plus a mag≤6 HYG catalog. `/` keeps the cheap procedural stripes so a
+laptop at the desktop view does not fetch those assets.
+
+`/craive` and `/` stay at feature parity as the demo grows. The maps and credits live in
+`webapp/textures/`.
 
 ### What goes out over OSC
 
@@ -262,6 +281,8 @@ its pitch up.
 * Clicking a body on the wall starts an approach: its row highlights and its distance in
   the panel starts falling.
 * Nothing important sits in a corner or the entrance.
+* The operator HUD is a plaque on the front wall, under the sky — not a DOM overlay.
+  <kbd>H</kbd> hides it, <kbd>L</kbd> hides labels, <kbd>P</kbd> shows the side panels.
 
 
 ## Pointing it at your bridge
