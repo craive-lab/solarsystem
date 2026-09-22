@@ -291,6 +291,11 @@ export class UI {
       } else if (e.key === ' ') {
         e.preventDefault();
         h.onTogglePause();
+      } else if ((e.key === 'l' || e.key === 'L') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        const box = $('in-labels');
+        box.checked = !box.checked;
+        h.onLabels(box.checked);
       }
     });
   }

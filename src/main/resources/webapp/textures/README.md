@@ -1,6 +1,7 @@
-# Band-quality maps
+# Scene maps
 
-Used only by `/craive` (`SolarSystemScene({ quality: 'band' })`). The desktop view keeps the procedural stripes.
+Loaded by both `/` and `/craive` (`SolarSystemScene` quality `high` / `band`).
+`quality: 'cheap'` keeps the procedural stripes and skips these files.
 
 | file | source |
 |---|---|

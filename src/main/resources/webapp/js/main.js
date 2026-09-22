@@ -31,13 +31,19 @@ const state = {
 // ---------------------------------------------------------------- renderer
 
 const canvas = document.getElementById('scene');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true,
+  powerPreference: 'high-performance',
+  logarithmicDepthBuffer: true
+});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.05, 6000);
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.05, 9000);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
@@ -49,7 +55,7 @@ controls.zoomSpeed = 0.8;
 
 // ---------------------------------------------------------------- scene
 
-const sky = new SolarSystemScene();
+const sky = new SolarSystemScene({ quality: 'high', starSize: 1.2, billboard: 'cylindrical' });
 const scene = sky.scene;
 const { objects, positions, velocities, phases, pickables } = sky;
 const field = [];
@@ -100,8 +106,7 @@ let transEndDist = 0;
 const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 function desiredDistance(index) {
-  if (index === 0) return 26;
-  return THREE.MathUtils.clamp(displayRadius(BODIES[index]) * 14, 4.5, 26);
+  return THREE.MathUtils.clamp(displayRadius(BODIES[index]) * 9, 4.5, 30);
 }
 
 function selectBody(index) {
@@ -285,8 +290,7 @@ function tick() {
   }
   camera.position.copy(controls.target).add(camOffset);
 
-  // Beacons and labels sized for a ~900 px tall perspective viewport (~1.7° / 1.3°).
-  sky.syncVisuals(camera.position, { markerDeg: 1.72, labelDeg: 1.26 });
+  sky.syncVisuals(camera.position, { markerDeg: 0.9, labelDeg: 0.7 });
 
   audio.update(positions, field, listener, fwd, up, phases);
   radar.draw(field, state.listener);
@@ -328,7 +332,33 @@ sky.refreshOrbitLines(centuries(state.epochJd), state.tiltGain);
 controls.target.copy(positions[state.listener]);
 camera.position.copy(controls.target).add(new THREE.Vector3(0, 0.55, 1).setLength(175));
 ui.setSelected(state.listener);
+sky.setHighlight(state.listener);
 ui.setPaused(false);
 ui.setAudioRunning(false);
 initOsc();
 renderer.setAnimationLoop(tick);
+
+try {
+  if (new URLSearchParams(location.search).get('test') === 'quality') {
+    sky.ready.then(() => {
+      const result = {
+        quality: sky.quality,
+        earthMapped: !!(sky.objects[3].mesh.material.map && !sky.objects[3].mesh.material.map.isCanvasTexture),
+        atmosphere: !!sky.atmosphere,
+        milkyWay: !!sky.milkyWay,
+        catalogStars: sky._catalogStars ? sky._catalogStars.geometry.attributes.position.count : 0,
+        sphereSegs: sky.objects[0].mesh.geometry.parameters?.widthSegments ?? 0,
+        ringMapped: !!(sky.objects.find((o) => o.ring)?.ring.material.map),
+        sunLightOnSun: sky.sunLight.position.distanceTo(sky.objects[0].mesh.position) < 1e-4,
+        billboard: sky.billboard,
+        outputColorSpace: renderer.outputColorSpace,
+        logDepth: renderer.capabilities.logarithmicDepthBuffer
+      };
+      window.__desktopProbe = result;
+      document.documentElement.dataset.probe = JSON.stringify(result);
+      console.info('desktop quality probe', result);
+    });
+  }
+} catch (err) {
+  document.documentElement.dataset.probe = JSON.stringify({ error: String(err) });
+}

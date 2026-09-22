@@ -201,8 +201,8 @@ function starField(count, radius) {
 }
 
 /**
- * @param options.quality    'desktop' (procedural stripes, 48-seg spheres) or
- *        'band' (JPL maps, 128-seg spheres, catalog sky). `/` stays on desktop.
+ * @param options.quality    'high' (default: JPL maps, 128-seg spheres, catalog sky)
+ *        or 'cheap' (procedural stripes). 'band' is an alias for high, used by /craive.
  * @param options.starSize   unattenuated gl_PointSize in framebuffer pixels. On the
  *        band those pixels are fattened 1.32×, so squares look round on the wall.
  * @param options.billboard  'sprite' (desktop, faces the camera) or 'cylindrical'
@@ -211,19 +211,20 @@ function starField(count, radius) {
 export class SolarSystemScene {
   constructor(options = {}) {
     this.scene = new THREE.Scene();
-    this.quality = options.quality === 'band' ? 'band' : 'desktop';
+    this.quality = options.quality === 'cheap' ? 'cheap'
+      : options.quality === 'band' ? 'band' : 'high';
     this.billboard = options.billboard === 'cylindrical' ? 'cylindrical' : 'sprite';
-    const band = this.quality === 'band';
-    const sphereSegs = band ? 128 : 48;
-    const sphereRings = band ? 96 : 32;
+    const high = this.quality !== 'cheap';
+    const sphereSegs = high ? 128 : 48;
+    const sphereRings = high ? 96 : 32;
     const starRadius = options.starRadius ?? 2200;
 
-    // Band: dim fill so the sun light models the globes. Desktop keeps the old fill.
-    this.ambient = new THREE.AmbientLight(0x4a5f80, band ? 0.16 : 0.55);
+    // Dim fill so the sun light models the globes.
+    this.ambient = new THREE.AmbientLight(0x4a5f80, high ? 0.16 : 0.55);
     this.scene.add(this.ambient);
     // Colour is an sRGB hex; three.js ColorManagement linearises it. Intensity is linear.
     // decay 0 so Neptune at 78 units is still modelled, not black.
-    this.sunLight = new THREE.PointLight(0xfff1d6, band ? 3.6 : 2.6, 0, 0);
+    this.sunLight = new THREE.PointLight(0xfff1d6, high ? 3.6 : 2.6, 0, 0);
     this.scene.add(this.sunLight);
 
     this._placeholderStars = starField(options.starCount ?? 4200, starRadius);
@@ -256,7 +257,7 @@ export class SolarSystemScene {
       let ring = null;
       if (body.ring) {
         ring = new THREE.Mesh(
-          ringGeometry(radius * body.ring.inner, radius * body.ring.outer, band ? 192 : 96),
+          ringGeometry(radius * body.ring.inner, radius * body.ring.outer, high ? 192 : 96),
           new THREE.MeshBasicMaterial({
             color: body.ring.color, side: THREE.DoubleSide,
             transparent: true, opacity: 0.45, depthWrite: false
@@ -298,7 +299,7 @@ export class SolarSystemScene {
         this.scene.add(orbit);
       }
 
-      if (band && body.name === 'Earth') {
+      if (high && body.name === 'Earth') {
         this.atmosphere = new THREE.Mesh(
           new THREE.SphereGeometry(radius * 1.045, sphereSegs, sphereRings),
           atmosphereMaterial()
@@ -320,7 +321,9 @@ export class SolarSystemScene {
     this._lineEpoch = null;
     this._lineTilt = null;
 
-    this.ready = band ? this._loadBandAssets(starRadius, options.starSize ?? 1.2) : Promise.resolve();
+    this.ready = high
+      ? this._loadHighQualityAssets(starRadius, options.starSize ?? 1.6)
+      : Promise.resolve();
   }
 
   _configureMap(tex) {
@@ -333,7 +336,7 @@ export class SolarSystemScene {
     return tex;
   }
 
-  async _loadBandAssets(starRadius, starSize) {
+  async _loadHighQualityAssets(starRadius, starSize) {
     const loader = new THREE.TextureLoader();
     const jobs = [];
     for (const o of this.objects) {
@@ -381,7 +384,7 @@ export class SolarSystemScene {
     }));
     const results = await Promise.allSettled(jobs);
     const failed = results.filter((r) => r.status === 'rejected');
-    if (failed.length) console.warn('band assets: ' + failed.length + ' failed to load', failed);
+    if (failed.length) console.warn('scene assets: ' + failed.length + ' failed to load', failed);
   }
 
   _ensureSkyRig() {

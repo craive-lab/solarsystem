@@ -255,14 +255,13 @@ Stars stay unattenuated `gl_PointSize` pixels: square on the fattened canvas, ro
 the wall.
 
 `/craive` and `/` share `webapp/js/scenery.js`, which owns the scene and the simulation.
-Only the projection, the controls, the listener and the *quality* differ. `/craive` loads
-2K JPL/NASA equirectangular maps (anisotropy 8), 128-segment spheres, a Saturn ring with
-alpha, an Earth limb atmosphere, a PointLight that rides the Sun in linear colour, and an
-8K NASA star map plus a mag≤6 HYG catalog. `/` keeps the cheap procedural stripes so a
-laptop at the desktop view does not fetch those assets.
+Both load the same 2K JPL/NASA maps (anisotropy 8), 128-segment spheres, Saturn ring with
+alpha, Earth limb, linear sun light, 8K star map and mag≤6 HYG catalog, and yaw-only
+billboards sized in degrees. They differ in how they photograph it: `/` is a desktop
+orbit camera; `/craive` is the Pixelwarp band. Pass
+`SolarSystemScene({ quality: 'cheap' })` to keep the old procedural stripes.
 
-`/craive` and `/` stay at feature parity as the demo grows. The maps and credits live in
-`webapp/textures/`.
+The maps and credits live in `webapp/textures/`.
 
 ### What goes out over OSC
 

@@ -38,7 +38,7 @@ Cube faces are 8-bit with ACES applied per face; the blit copies already-compres
 
 Once the walls are sharp, 48-segment spheres and 4×256 stripe textures are the ceiling.
 
-- [x] Add a `quality: 'band' | 'desktop'` option on `SolarSystemScene` so `/` does not load band assets
+- [x] `SolarSystemScene` quality `high` (default, used by `/` and `/craive`) loads maps, catalog sky, atmosphere; `cheap` keeps procedural stripes
 - [x] Raise sphere tessellation to 96–128 segments (or distance LOD) — at fly-to standoff the Sun is ~770 px across
 - [x] Replace `bodyTexture()` with equirectangular JPL / Solar System Treks maps, anisotropy 8
 - [x] Saturn ring texture with alpha
