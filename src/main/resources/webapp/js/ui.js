@@ -1,7 +1,8 @@
 /**
- * DOM panels: the body list with live bearings, the transport, the audio controls and the
- * OSC panel. Everything the user changes is reported through the handlers object; nothing
- * in here touches three.js or Web Audio directly.
+ * DOM panels: the body list with live bearings, the view switch, the transport, the audio
+ * controls and the OSC panel. Everything the user changes is reported through the handlers
+ * object, except the view switch, which reloads the page; nothing in here touches three.js
+ * or Web Audio directly.
  */
 
 const $ = (id) => document.getElementById(id);
@@ -55,6 +56,21 @@ export function typingIn(target) {
   return !!target && target.nodeType === 1 && (
     (target.tagName === 'INPUT' && !['range', 'checkbox', 'radio', 'button'].includes(target.type))
     || target.tagName === 'TEXTAREA' || target.isContentEditable);
+}
+
+/** Whether this page load is the CRAIVE band. The <head> of index.html decides, from ?mode=craive. */
+const craiveView = () => document.documentElement.classList.contains('craive');
+
+/**
+ * Reloads into the other view, keeping the rest of the query string (?test= and the like).
+ * One view per page load: they want differently configured WebGL contexts, and neither
+ * tears its renderer down.
+ */
+function switchView(craive) {
+  const url = new URL(location.href);
+  if (craive) url.searchParams.set('mode', 'craive');
+  else url.searchParams.delete('mode');
+  location.assign(url);
 }
 
 /** Slider position 0-1000 to simulation rate in days per second, logarithmically. */
@@ -128,9 +144,9 @@ export class BodyList {
 }
 
 /**
- * The Time, Audio and OSC panels, which are identical in both front ends. Built here
- * rather than written into each page's HTML so the desktop view and the CRAIVE band
- * cannot end up with different controls.
+ * The View, Time, Audio and OSC panels, which are identical in both front ends. Built
+ * here rather than written into each view's markup so the desktop view and the CRAIVE
+ * band cannot end up with different controls.
  *
  * @param options.heading  include the "face direction of travel" switch. Only the desktop
  *        view has it: on the band the listener always faces the way the ship is pointing.
@@ -141,6 +157,11 @@ export class Controls {
     this.serverWsUrl = '';
     this.activeWsUrl = '';
     root.insertAdjacentHTML('beforeend', `
+      <section class="panel">
+        <h2>View</h2>
+        <label class="check"><input id="in-craive" type="checkbox"${craiveView() ? ' checked' : ''}> CRAIVE Lab band</label>
+      </section>
+
       <section class="panel">
         <h2>Time</h2>
         <div class="row">
@@ -191,6 +212,7 @@ export class Controls {
 
   #wire(options) {
     const h = this.h;
+    $('in-craive').addEventListener('change', (e) => switchView(e.target.checked));
     $('btn-pause').addEventListener('click', () => h.onTogglePause());
     $('btn-now').addEventListener('click', () => h.onNow());
     $('btn-audio').addEventListener('click', () => h.onToggleAudio());

@@ -202,7 +202,7 @@ function starField(count, radius) {
 
 /**
  * @param options.quality    'high' (default: JPL maps, 128-seg spheres, catalog sky)
- *        or 'cheap' (procedural stripes). 'band' is an alias for high, used by /craive.
+ *        or 'cheap' (procedural stripes). 'band' is an alias for high, used by the CRAIVE view.
  * @param options.starSize   unattenuated gl_PointSize in framebuffer pixels. On the
  *        band those pixels are fattened 1.32×, so squares look round on the wall.
  * @param options.billboard  'sprite' (desktop, faces the camera) or 'cylindrical'

@@ -6,3 +6,6 @@ target/
 .DS_Store
 node_modules/
 __pycache__/
+
+# native-image drops this beside build/solarsystem.exe; only JVM monitoring needs it
+build/management_ext.dll

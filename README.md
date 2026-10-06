@@ -38,23 +38,20 @@ receiver ordinary OSC — see [What a bridge has to do](#what-a-bridge-has-to-do
 
 ## Quick start
 
-Requires JDK 17 or newer and Maven.
+Ready-built binaries are committed in [`build/`](build/), so there is nothing to compile:
 
 ```sh
-mvn package
-java -jar target/solarsystem.jar --ws-url ws://localhost:8888/osc
+build/solarsystem.exe --ws-url ws://localhost:8888/osc             # Windows, no Java needed
+java -jar build/solarsystem.jar --ws-url ws://localhost:8888/osc   # any OS with Java 21+
 ```
 
-Or build a standalone executable with no JVM required — see
-[Native executable](#native-executable):
-
-```sh
-mvn -Pnative package
-target/solarsystem.exe --ws-url ws://localhost:8888/osc
-```
+`run.cmd` and `run.sh` do the second. To rebuild either binary yourself, see
+[Building](#building).
 
 Either way, open <http://localhost:8080/>, press **Start with sound**, and click a planet.
-Headphones matter here: HRTF panning needs two ears.
+Headphones matter here: HRTF panning needs two ears. For the CRAIVE Lab's wrap-around
+band, open <http://localhost:8080/?mode=craive> instead — see
+[The CRAIVE Lab](#the-craive-lab-modecraive).
 
 `--ws-url` is optional. Without it the page starts with no destination and you type one
 into the **WebSocket server** box in its OSC panel, which is remembered for next time. The
@@ -99,6 +96,7 @@ direction of travel, the Sun is always about 90° off one shoulder.
 | **Orbit tilt** | 1×–8× exaggeration of orbital inclination |
 | **Doppler** | pitch shift from radial velocity |
 | **Face direction of travel** | off = the listener uses the camera's orientation instead |
+| **CRAIVE Lab band** | reload into the CRAIVE view; untick it there to come back |
 
 The **orbit tilt** control is worth a moment. The real solar system is nearly flat — every
 planet is within 7° of the ecliptic — so at 1× there is almost nothing to hear above or
@@ -140,20 +138,27 @@ gain = 8 / (8 + 0.85 * (max(distance, 8) - 8))
 ```
 
 
-## The CRAIVE Lab: `/craive`
+## The CRAIVE Lab: `?mode=craive`
 
 RPI's CRAIVE Lab is a walk-in panoramic room — a continuous projection band around four
-walls, eight WUXGA projectors warped and edge-blended by Pixelwarp. `/craive` renders the
-solar system for it as a spaceship whose walls are all windows: the room *is* the vehicle,
-the audience walks around inside it, and the nine voices are heard from wherever it has
-flown to. Fly past Jupiter and it goes by down one side of the room.
+walls, eight WUXGA projectors warped and edge-blended by Pixelwarp. The CRAIVE view renders
+the solar system for it as a spaceship whose walls are all windows: the room *is* the
+vehicle, the audience walks around inside it, and the nine voices are heard from wherever
+it has flown to. Fly past Jupiter and it goes by down one side of the room.
 
 ```sh
-target/solarsystem.exe --ws-url ws://localhost:8888/osc
+build/solarsystem.exe --ws-url ws://localhost:8888/osc
 ```
 
-then open <http://localhost:8080/craive> fullscreen on the desktop that spans the eight
-projectors, and let Pixelwarp do the warping and blending.
+then open <http://localhost:8080/?mode=craive> fullscreen on the desktop that spans the
+eight projectors, and let Pixelwarp do the warping and blending.
+
+The desktop view and the CRAIVE view are the same page. `?mode=craive` picks the view at
+load; without it you get the desktop view. Once the page is up, the **CRAIVE Lab band**
+checkbox in the View panel switches between them by reloading, so the simulation clock,
+rate and audio start afresh. On the band the panels start hidden, so press <kbd>P</kbd>
+first to get at it. Only one view runs per page load: they need differently configured
+WebGL contexts, and the band's capture targets are too large to leave lying around.
 
 ### Flying
 
@@ -188,11 +193,12 @@ wall several metres away.
 
 Both floating panels are the desktop view's, not copies of them. On the left, `BodyList`
 gives each body's bearing, elevation, distance and level, and clicking a row flies there.
-On the right, `Controls` gives the same Time, Audio and OSC panels as `/` — pause, rate,
-orbit tilt, date, volume, Doppler, labels, and the WebSocket server box. Both are built by
-`webapp/js/ui.js` and mounted by each page, so the two front ends cannot end up with
-different controls. The one difference is the "face direction of travel" switch, which
-only `/` has: on the band the listener is the ship and always faces where it points.
+On the right, `Controls` gives the same View, Time, Audio and OSC panels as the desktop
+view — the view switch, pause, rate, orbit tilt, date, volume, Doppler, labels, and the
+WebSocket server box. Both are built by `webapp/js/ui.js` and mounted by each view, so the
+two front ends cannot end up with different controls. The one difference is the "face
+direction of travel" switch, which only the desktop view has: on the band the listener is
+the ship and always faces where it points.
 
 Everything in the DOM is projected onto the wall along with the band, so <kbd>H</kbd>
 hides both panels and the HUD for a clean room.
@@ -234,7 +240,8 @@ strip is scissored off and left black. Logarithmic depth keeps the near 0.05 / s
 The canvas is always 15360×1200 (`devicePixelRatio` 1). If the GPU cannot hold 60 fps,
 capture quality drops in place: MSAA 4× → 2× → 0, then 12 → 8 → 6 slices, then a 2048
 cubemap of the four side faces. The HUD shows the active rung and the frame rate, and
-appends `dropped` once it has stepped down. `?capture=cube` or `?rung=0..5` lock a rung.
+appends `dropped` once it has stepped down. Adding `capture=cube` or `rung=0..5` to the
+query string, as in `?mode=craive&rung=2`, locks a rung.
 
 The mapping is the lab's Photoshop pipeline (crop, equirectangular conversion,
 recomposition) as a sample:
@@ -254,11 +261,11 @@ driving, not for the wall. Beacons and names are yaw-only billboards that face t
 Stars stay unattenuated `gl_PointSize` pixels: square on the fattened canvas, round on
 the wall.
 
-`/craive` and `/` share `webapp/js/scenery.js`, which owns the scene and the simulation.
+The two views share `webapp/js/scenery.js`, which owns the scene and the simulation.
 Both load the same 2K JPL/NASA maps (anisotropy 8), 128-segment spheres, Saturn ring with
 alpha, Earth limb, linear sun light, 8K star map and mag≤6 HYG catalog, and yaw-only
-billboards sized in degrees. They differ in how they photograph it: `/` is a desktop
-orbit camera; `/craive` is the Pixelwarp band. Pass
+billboards sized in degrees. They differ in how they photograph it: the desktop view is an
+orbit camera; the CRAIVE view is the Pixelwarp band. Pass
 `SolarSystemScene({ quality: 'cheap' })` to keep the old procedural stripes.
 
 The maps and credits live in `webapp/textures/`.
@@ -292,7 +299,7 @@ There is one setting, and two places to put it.
 at — the page connects on load with nothing to configure:
 
 ```sh
-java -jar target/solarsystem.jar --ws-url ws://localhost:8888/osc
+java -jar build/solarsystem.jar --ws-url ws://localhost:8888/osc
 ```
 
 **In the page**, in the OSC panel's **WebSocket server** box. Type a URL, press **Go**.
@@ -566,8 +573,29 @@ node   tools/osc-monitor.js --raw
 For editing the front end without rebuilding:
 
 ```sh
-java -jar target/solarsystem.jar --web-dir src/main/resources/webapp
+java -jar build/solarsystem.jar --web-dir src/main/resources/webapp
 ```
+
+
+## Building
+
+`build/` holds the finished binaries and is committed, so nobody needs Maven, a JDK or
+GraalVM just to run the app. Maven writes straight into it; `target/` is still its scratch
+space and stays ignored.
+
+| command | writes | needs |
+|---|---|---|
+| `mvn package` | `build/solarsystem.jar` | JDK 21+ and Maven |
+| `mvn -Pnative package` | `build/solarsystem.jar` and `build/solarsystem.exe` | GraalVM, and on Windows MSVC — see [Native executable](#native-executable) |
+
+The committed binaries do not rebuild themselves. After changing anything that ships —
+the Java or the web app — rebuild with `mvn -Pnative clean package` and commit `build/`
+along with the change, or the repository keeps handing out the old version. Keep the
+`clean`: Maven never removes a deleted file from `target/classes`, so without it a page
+you have deleted is still embedded in both binaries.
+
+The native executable is per platform, and the committed one is Windows x64. On Linux or
+macOS use the jar, or run the native build there to get `build/solarsystem`.
 
 
 ## Native executable
@@ -581,16 +609,17 @@ mvn -Pnative package
 
 |  | `mvn package` | `mvn -Pnative package` |
 |---|---|---|
-| output | `target/solarsystem.jar` | `target/solarsystem.exe` |
-| size | 3.5 MB | 26 MB |
+| output | `build/solarsystem.jar` | `build/solarsystem.exe` |
+| size | 15 MB | 34 MB |
 | needs a JVM installed | yes | no |
 | Jetty ready in | ~300 ms | ~25 ms |
-| build takes | ~3 s | ~17 s |
+| build takes | ~3 s | ~45 s |
 
 The executable is genuinely standalone — the whole web app, three.js and osc.js included,
 is embedded in it. Copy that one file anywhere and run it. `native-image` also drops a
 `management_ext.dll` next to it; that is only needed if you enable JVM monitoring, which
-this profile deliberately does not, so you can ignore it.
+this profile deliberately does not, so you can ignore it. `.gitignore` keeps it out of the
+repository.
 
 Everything works exactly as it does on the JVM: static hosting, caching, and
 `/api/config`. The options are identical, and `--help` adjusts its usage line to match how
@@ -614,7 +643,7 @@ and exercise it — load the page, click a body, let OSC flow for a while:
 
 ```sh
 java -agentlib:native-image-agent=config-output-dir=src/main/resources/META-INF/native-image/com.ebremer/solarsystem,config-write-period-secs=4 \
-     -jar target/solarsystem.jar --ws-url ws://localhost:8888/osc
+     -jar build/solarsystem.jar --ws-url ws://localhost:8888/osc
 ```
 
 `config-write-period-secs` matters: the agent normally writes on clean JVM exit, and on
@@ -650,6 +679,9 @@ classes.
 
 ```
 pom.xml                    the `native` profile lives here
+build/                     committed build output, see Building
+  solarsystem.jar          runnable jar, any OS with Java 21+
+  solarsystem.exe          Windows x64 native executable, no Java needed
 src/main/java/com/ebremer/solarsystem/
   SolarSystemServer.java   Jetty bootstrap, static hosting, banner
   Config.java              command line options
@@ -659,9 +691,9 @@ src/main/resources/META-INF/native-image/com.ebremer/
   solarsystem/             reachability metadata, agent generated
   solarsystem-webapp/      reachability metadata, hand written
 src/main/resources/webapp/
-  index.html        the desktop view
-  craive.html       the CRAIVE Lab band, served at /craive
+  index.html        both views; ?mode=craive picks the CRAIVE Lab band
   css/style.css
+  css/craive.css    the CRAIVE view only, scoped to html.craive
   js/bodies.js      orbital elements, Kepler solver, synth recipes
   js/scenery.js     the scene and the simulation, shared by both views
   js/audio.js       Web Audio graph, panners, listener, distance model

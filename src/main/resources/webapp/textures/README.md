@@ -1,6 +1,6 @@
 # Scene maps
 
-Loaded by both `/` and `/craive` (`SolarSystemScene` quality `high` / `band`).
+Loaded by both views, `/` and `/?mode=craive` (`SolarSystemScene` quality `high` / `band`).
 `quality: 'cheap'` keeps the procedural stripes and skips these files.
 
 | file | source |

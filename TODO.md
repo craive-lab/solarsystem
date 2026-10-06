@@ -38,7 +38,7 @@ Cube faces are 8-bit with ACES applied per face; the blit copies already-compres
 
 Once the walls are sharp, 48-segment spheres and 4×256 stripe textures are the ceiling.
 
-- [x] `SolarSystemScene` quality `high` (default, used by `/` and `/craive`) loads maps, catalog sky, atmosphere; `cheap` keeps procedural stripes
+- [x] `SolarSystemScene` quality `high` (default, used by both views) loads maps, catalog sky, atmosphere; `cheap` keeps procedural stripes
 - [x] Raise sphere tessellation to 96–128 segments (or distance LOD) — at fly-to standoff the Sun is ~770 px across
 - [x] Replace `bodyTexture()` with equirectangular JPL / Solar System Treks maps, anisotropy 8
 - [x] Saturn ring texture with alpha
@@ -59,7 +59,7 @@ Never shrink the buffer and CSS-scale. If the lab GPU cannot hold 60 fps, drop q
 
 DOM panels are projected onto the walls.
 
-- [x] Default `/craive` to `body.bare` for a show
+- [x] Default the CRAIVE view to `body.bare` for a show
 - [x] Draw the operator HUD as an in-canvas inset on the front wall, below the useful sky
 - [x] Toggle audience labels independently of the operator HUD
 
@@ -68,4 +68,4 @@ DOM panels are projected onto the walls.
 - `BAND` numbers and the fatten
 - Yaw-only flight and the start pose (horizon must not tilt; the disc needs the extra 23.6° above)
 - One canvas → Pixelwarp → eight projectors (no per-projector cameras, no head tracking)
-- Shared `scenery.js` simulation so `/` and `/craive` stay at feature parity
+- Shared `scenery.js` simulation so the desktop and CRAIVE views stay at feature parity

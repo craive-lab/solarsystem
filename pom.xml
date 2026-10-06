@@ -58,7 +58,14 @@
         </configuration>
       </plugin>
 
-      <!-- Single runnable jar: java -jar target/solarsystem.jar -->
+      <!--
+        Single runnable jar: java -jar build/solarsystem.jar
+
+        Written to build/ rather than target/ because build/ is committed, so nobody has to
+        build it to run the app. Rebuild with `mvn -Pnative clean package` and commit it
+        alongside any change that should ship; without clean, files deleted from the web
+        app linger in target/classes and get packaged anyway.
+      -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
@@ -68,6 +75,7 @@
             <phase>package</phase>
             <goals><goal>shade</goal></goals>
             <configuration>
+              <outputFile>${project.basedir}/build/solarsystem.jar</outputFile>
               <createDependencyReducedPom>false</createDependencyReducedPom>
               <transformers>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
@@ -97,7 +105,7 @@
     <!--
       Ahead-of-time compiled executable:
 
-          mvn -Pnative package        ->  target/solarsystem.exe   (target/solarsystem on unix)
+          mvn -Pnative package        ->  build/solarsystem.exe   (build/solarsystem on unix)
 
       Needs a GraalVM JDK with native-image installed, and on Windows an MSVC toolchain
       (Visual Studio with "Desktop development with C++"). The build takes a few minutes
@@ -126,6 +134,7 @@
             </executions>
             <configuration>
               <imageName>solarsystem</imageName>
+              <outputDirectory>${project.basedir}/build</outputDirectory>
               <mainClass>${mainClass}</mainClass>
               <!-- Fail loudly rather than silently emitting a JVM-dependent fallback image. -->
               <fallback>false</fallback>

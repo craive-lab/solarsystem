@@ -4,10 +4,26 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Solar System &middot; spatial audio &amp; OSC</title>
+  <!--
+    Two views, one page. The desktop view is the default; ?mode=craive starts on the
+    RPI CRAIVE Lab band instead, and the View panel flips between them by reloading.
+    Decided here, before the body renders, so css/craive.css applies from the first
+    frame and the module below knows which markup and script to load.
+  -->
+  <script>
+    if ((new URLSearchParams(location.search).get('mode') || '').toLowerCase() === 'craive') {
+      document.documentElement.classList.add('craive');
+      document.title = 'Solar System · CRAIVE Lab';
+    }
+  </script>
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/craive.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='7' fill='%23ffc648'/><circle cx='28' cy='16' r='2.5' fill='%234d8fe0'/></svg>">
 </head>
 <body>
+
+<!-- ============================================================ desktop view (js/main.js) -->
+<template id="view-desktop">
 
 <canvas id="scene"></canvas>
 
@@ -50,13 +66,74 @@
     <p id="here-facts" class="facts"></p>
   </section>
 
-  <!-- Time, Audio and OSC are appended here by Controls in js/ui.js, so the
-       CRAIVE band at /craive gets exactly the same panels. -->
+  <!-- View, Time, Audio and OSC are appended here by Controls in js/ui.js, so the
+       CRAIVE view gets exactly the same panels. -->
 
 </aside>
 
 <div id="hint">drag to orbit &middot; scroll to zoom &middot; click a body to listen from it &middot; 1-9 to jump</div>
 <div id="tooltip" hidden></div>
+
+</template>
+
+<!-- ============================================================ CRAIVE view (js/craive.js) -->
+<!--
+  The RPI CRAIVE Lab front end. The canvas is the lab's wrap-around band:
+  1200 x 15360 px, 12.8:1, eight WUXGA projectors warped and blended by Pixelwarp.
+  Open fullscreen on the desktop that spans them.
+
+  Everything here is deliberately minimal — the band is the display. The operator HUD
+  is drawn into the canvas on the front wall. DOM panels stay off the walls (body.bare)
+  unless P brings them back. Audience labels are in-scene quads, toggled with L.
+-->
+<template id="view-craive">
+
+<canvas id="band"></canvas>
+
+<aside id="left-panel" class="panel">
+  <div id="ship-id">
+    <strong>USS CRAIVE</strong>
+    <span>NCC-12180</span>
+  </div>
+  <h2>Bodies</h2>
+  <ul id="body-list"></ul>
+  <p class="legend">click to fly there &middot; <span class="k">az</span> bearing &middot;
+    <span class="k">el</span> elevation &middot; bar is level</p>
+</aside>
+
+<aside id="right-panel"></aside>
+
+<div id="hud">
+  <div id="hud-position">&mdash;</div>
+  <div id="hud-nearest">&mdash;</div>
+  <div id="hud-keys">&uarr;&darr; fly &middot; &larr;&rarr; turn &middot; PgUp/PgDn climb &middot; Shift boost
+    &middot; click a body to fly to it &middot; H HUD &middot; L labels &middot; P panels</div>
+</div>
+
+<div id="gate">
+  <div class="card">
+    <h1>Solar System</h1>
+    <p class="sub">CRAIVE Lab &middot; all walls are windows</p>
+    <p>
+      The room is the ship. Every wall looks out on the solar system, and the nine
+      bodies are heard from wherever you have flown to &mdash; pass Jupiter and it
+      goes by down one side of the room.
+    </p>
+    <div class="keys">
+      <span><kbd>&uarr;</kbd> <kbd>&darr;</kbd></span><span>forward and back</span>
+      <span><kbd>&larr;</kbd> <kbd>&rarr;</kbd></span><span>rotate left and right</span>
+      <span><kbd>Page Up</kbd> <kbd>Page Dn</kbd></span><span>climb and dive</span>
+      <span><kbd>Shift</kbd></span><span>hold to fly faster</span>
+      <span>click</span><span>fly to a body, on the wall or in the list</span>
+      <span><kbd>H</kbd></span><span>operator HUD on the front wall</span>
+      <span><kbd>L</kbd></span><span>audience labels and orbits</span>
+      <span><kbd>P</kbd></span><span>operator panels (land on the walls)</span>
+    </div>
+    <button id="gate-start">Launch</button>
+  </div>
+</div>
+
+</template>
 
 <!-- osc.js ships as a classic script and exposes the global `osc`. -->
 <script src="vendor/osc-browser.min.js"></script>
@@ -69,7 +146,12 @@
   }
 }
 </script>
-<script type="module" src="js/main.js"></script>
+<script type="module">
+  // Stamp out this view's markup, then load the script that drives it.
+  const craive = document.documentElement.classList.contains('craive');
+  document.body.prepend(document.getElementById(craive ? 'view-craive' : 'view-desktop').content.cloneNode(true));
+  import(craive ? './js/craive.js' : './js/main.js');
+</script>
 
 </body>
 </html>
