@@ -1,0 +1,310 @@
+{
+  "reflection": [
+    {
+      "type": "com.ebremer.solarsystem.SolarSystemServer",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "main",
+          "parameterTypes": [
+            "java.lang.String[]"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "java.lang.Boolean",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "getBoolean",
+          "parameterTypes": [
+            "java.lang.String"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "java.lang.String[]"
+    },
+    {
+      "type": "java.lang.System",
+      "methods": [
+        {
+          "name": "getSecurityManager",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "java.lang.Thread",
+      "methods": [
+        {
+          "name": "ofVirtual",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "java.lang.Thread$Builder",
+      "methods": [
+        {
+          "name": "factory",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "java.lang.management.ManagementFactory",
+      "methods": [
+        {
+          "name": "getRuntimeMXBean",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "java.lang.management.RuntimeMXBean",
+      "methods": [
+        {
+          "name": "getUptime",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "java.security.AccessController",
+      "methods": [
+        {
+          "name": "doPrivileged",
+          "parameterTypes": [
+            "java.security.PrivilegedAction"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "java.util.concurrent.Executors",
+      "methods": [
+        {
+          "name": "newThreadPerTaskExecutor",
+          "parameterTypes": [
+            "java.util.concurrent.ThreadFactory"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "javax.security.auth.Subject",
+      "methods": [
+        {
+          "name": "callAs",
+          "parameterTypes": [
+            "javax.security.auth.Subject",
+            "java.util.concurrent.Callable"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "org.eclipse.jetty.http.Http10FieldPreEncoder"
+    },
+    {
+      "type": "org.eclipse.jetty.http.Http11FieldPreEncoder"
+    },
+    {
+      "type": "org.eclipse.jetty.logging.JettyLoggingServiceProvider"
+    },
+    {
+      "type": "org.eclipse.jetty.util.TypeUtil",
+      "methods": [
+        {
+          "name": "getClassLoaderLocation",
+          "parameterTypes": [
+            "java.lang.Class"
+          ]
+        },
+        {
+          "name": "getCodeSourceLocation",
+          "parameterTypes": [
+            "java.lang.Class"
+          ]
+        },
+        {
+          "name": "getModuleLocation",
+          "parameterTypes": [
+            "java.lang.Class"
+          ]
+        },
+        {
+          "name": "getSystemClassLoaderLocation",
+          "parameterTypes": [
+            "java.lang.Class"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "org.eclipse.jetty.util.Utf8StringBuilder",
+      "methods": [
+        {
+          "name": "errorActionIgnore",
+          "parameterTypes": []
+        },
+        {
+          "name": "errorActionReplace",
+          "parameterTypes": []
+        },
+        {
+          "name": "errorActionReport",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.launcher.LauncherHelper",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "isStaticMain"
+        },
+        {
+          "name": "noArgMain"
+        }
+      ],
+      "methods": [
+        {
+          "name": "getApplicationClass",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.management.VMManagementImpl",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "compTimeMonitoringSupport"
+        },
+        {
+          "name": "currentThreadCpuTimeSupport"
+        },
+        {
+          "name": "objectMonitorUsageSupport"
+        },
+        {
+          "name": "otherThreadCpuTimeSupport"
+        },
+        {
+          "name": "remoteDiagnosticCommandsSupport"
+        },
+        {
+          "name": "synchronizerUsageSupport"
+        },
+        {
+          "name": "threadAllocatedMemorySupport"
+        },
+        {
+          "name": "threadContentionMonitoringSupport"
+        }
+      ]
+    },
+    {
+      "type": "sun.security.provider.DRBG",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "java.security.SecureRandomParameters"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.security.provider.SHA",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.security.provider.SHA2$SHA256",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.text.resources.cldr.FormatData"
+    },
+    {
+      "type": "sun.text.resources.cldr.FormatData_en"
+    },
+    {
+      "type": "sun.text.resources.cldr.FormatData_en_US"
+    },
+    {
+      "type": "sun.util.resources.cldr.CalendarData"
+    }
+  ],
+  "resources": [
+    {
+      "glob": "META-INF/services/java.nio.channels.spi.SelectorProvider"
+    },
+    {
+      "glob": "META-INF/services/java.time.zone.ZoneRulesProvider"
+    },
+    {
+      "glob": "META-INF/services/java.util.spi.ResourceBundleControlProvider"
+    },
+    {
+      "glob": "META-INF/services/org.eclipse.jetty.http.HttpFieldPreEncoder"
+    },
+    {
+      "glob": "META-INF/services/org.slf4j.spi.SLF4JServiceProvider"
+    },
+    {
+      "glob": "jakarta/servlet/LocalStrings.properties"
+    },
+    {
+      "glob": "jakarta/servlet/LocalStrings_en.properties"
+    },
+    {
+      "glob": "jakarta/servlet/LocalStrings_en_US.properties"
+    },
+    {
+      "glob": "jakarta/servlet/http/LocalStrings.properties"
+    },
+    {
+      "glob": "jakarta/servlet/http/LocalStrings_en.properties"
+    },
+    {
+      "glob": "jakarta/servlet/http/LocalStrings_en_US.properties"
+    },
+    {
+      "glob": "jetty-logging-windows-11.properties"
+    },
+    {
+      "glob": "jetty-logging.properties"
+    },
+    {
+      "glob": "org/eclipse/jetty/http/encoding.properties"
+    },
+    {
+      "glob": "org/eclipse/jetty/http/mime.properties"
+    },
+    {
+      "glob": "org/eclipse/jetty/version/build.properties"
+    },
+    {
+      "bundle": "jakarta.servlet.LocalStrings"
+    },
+    {
+      "bundle": "jakarta.servlet.http.LocalStrings"
+    }
+  ]
+}

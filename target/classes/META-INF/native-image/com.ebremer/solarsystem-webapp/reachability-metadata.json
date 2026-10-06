@@ -1,0 +1,15 @@
+{
+  "comment": [
+    "Hand written, kept separate from the agent-generated metadata in ../solarsystem/ so",
+    "that regenerating the trace never clobbers it.",
+    "",
+    "The tracing agent can only record the files it actually saw requested, which would",
+    "silently drop any asset added later. This recursive glob embeds the whole web app in",
+    "the native image instead, so StaticServlet can serve anything under webapp/."
+  ],
+  "resources": [
+    {
+      "glob": "webapp/**"
+    }
+  ]
+}
