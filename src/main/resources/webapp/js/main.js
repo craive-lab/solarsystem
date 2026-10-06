@@ -270,7 +270,6 @@ async function startAudio(withoutGesture = false) {
 
 const ui = new UI(BODIES, {
   onSelect: selectBody,
-  onStartAudio: startAudio,
   onToggleAudio: () => {
     if (audio.running) {
       audio.stop();
@@ -419,14 +418,13 @@ window.addEventListener('resize', () => {
 
 // ---------------------------------------------------------------- start
 
-// Arrived by the view switch: carry on where the other view left off, past the launch card.
+// Arrived by the view switch: carry on where the other view left off.
 const handoff = takeHandoff();
 if (handoff) {
   state.epochJd = handoff.epochJd;
   state.simDays = handoff.simDays;
   state.paused = handoff.paused;
   ui.controls.restore(handoff.inputs);
-  ui.skipGate();
 }
 
 sky.step(centuries(state.epochJd), state.tiltGain, state.daysPerSecond);

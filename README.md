@@ -48,8 +48,8 @@ java -jar build/solarsystem.jar --ws-url ws://localhost:8888/osc   # any OS with
 `run.cmd` and `run.sh` do the second. To rebuild either binary yourself, see
 [Building](#building).
 
-Either way, open <http://localhost:8080/>, press **Start with sound**, and click a planet.
-Headphones matter here: HRTF panning needs two ears. For the CRAIVE Lab's wrap-around
+Either way, open <http://localhost:8080/>, press **Start audio** in the Audio panel, and
+click a planet. Headphones matter here: HRTF panning needs two ears. For the CRAIVE Lab's wrap-around
 band, open <http://localhost:8080/?mode=craive> instead — see
 [The CRAIVE Lab](#the-craive-lab-modecraive).
 
@@ -101,7 +101,7 @@ direction of travel, the Sun is always about 90° off one shoulder.
 | **Orbit tilt** | 1×–8× exaggeration of orbital inclination |
 | **Doppler** | pitch shift from radial velocity |
 | **Face direction of travel** | off = the listener uses the camera's orientation instead |
-| **CRAIVE Lab band** | switch to the CRAIVE view, keeping the date, settings and sound; untick it there to come back |
+| **CRAIVE Lab band**, or <kbd>C</kbd> | switch to the CRAIVE view, keeping the date, settings and sound; the same again comes back |
 
 ### Flying on the desktop
 
@@ -176,16 +176,16 @@ eight projectors, and let Pixelwarp do the warping and blending.
 
 The desktop view and the CRAIVE view are the same page. `?mode=craive` picks the view at
 load; without it you get the desktop view. Once the page is up, the **CRAIVE Lab band**
-checkbox in the View panel switches between them. Only one view runs per page load —
-they need differently configured WebGL contexts, and the band's capture targets are too
-large to leave lying around — so the switch reloads the page, but it carries the simulated
-date, pause, every panel setting and the sound across, and goes straight past the launch
-card. Chrome resumes the sound by itself after the reload; Firefox and Safari hold it until
-your first click or key press.
+checkbox in the View panel, or the <kbd>C</kbd> key, switches between them. Only one view
+runs per page load — they need differently configured WebGL contexts, and the band's
+capture targets are too large to leave lying around — so the switch reloads the page, but
+it carries the simulated date, pause, every panel setting and the sound across, and goes
+straight past the band's launch card. Chrome resumes the sound by itself after the reload;
+Firefox and Safari hold it until your first click or key press.
 
 Arriving on the band by the switch leaves the panels up, since that is where you just
-were. Open `?mode=craive` fresh and they start hidden for the show; press <kbd>P</kbd> to
-get at the switch. Where you are does not carry over: the band starts the ship at its
+were. Open `?mode=craive` fresh and they start hidden for the show, behind the launch card;
+<kbd>C</kbd> still switches back without them. Where you are does not carry over: the band starts the ship at its
 usual spot below the ecliptic, and the desktop starts on Earth.
 
 ### Flying
@@ -200,6 +200,7 @@ usual spot below the ecliptic, and the desktop starts on Earth.
 | <kbd>H</kbd> | operator HUD on the front wall (in the canvas) |
 | <kbd>L</kbd> | audience labels and orbits |
 | <kbd>P</kbd> | operator panels — they land on the walls, so the show starts without them |
+| <kbd>C</kbd> | switch to the desktop view |
 
 Yaw only — the heading never pitches or rolls, because a roomful of people standing up
 should not have the horizon tilt under them. Speeds are deliberately unhurried: 14 scene
@@ -221,7 +222,7 @@ wall several metres away.
 
 Both floating panels are the desktop view's, not copies of them. On the left, `BodyList`
 gives each body's bearing, elevation, distance and level, and clicking a row flies there.
-On the right, `Controls` gives the same View, Time, Audio and OSC panels as the desktop
+On the right, `Controls` gives the same Audio, View, Time and OSC panels as the desktop
 view — the view switch, pause, rate, orbit tilt, date, volume, Doppler, labels, and the
 WebSocket server box. Both are built by `webapp/js/ui.js` and mounted by each view, so the
 two front ends cannot end up with different controls. The one difference is the "face
@@ -747,9 +748,9 @@ must stay side by side.
 
 ## Troubleshooting
 
-**No sound.** Browsers will not start an AudioContext without a gesture — press **Start
-with sound**. If the page was opened silently, the **Start audio** button in the Audio
-panel does the same thing.
+**No sound.** Browsers will not start an AudioContext without a gesture, so the desktop
+view opens silent — press **Start audio** in the Audio panel. On the band, **Launch** does
+it.
 
 **The OSC dot is amber and stays there.** It is retrying, backing off to ten seconds.
 Either the bridge is not running, or the URL is wrong. The status line under the dot shows

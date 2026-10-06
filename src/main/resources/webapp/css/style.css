@@ -33,43 +33,6 @@ html, body {
   touch-action: none;
 }
 
-/* ---------- start gate ---------- */
-
-#gate {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: grid;
-  place-items: center;
-  background: radial-gradient(circle at 50% 40%, rgba(20, 34, 66, 0.85), rgba(3, 5, 12, 0.96));
-  backdrop-filter: blur(3px);
-  transition: opacity 0.5s ease;
-}
-
-#gate.hiding { opacity: 0; pointer-events: none; }
-
-.gate-card {
-  max-width: 470px;
-  padding: 34px 38px 30px;
-  text-align: center;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: rgba(8, 13, 26, 0.75);
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
-}
-
-.gate-card h1 {
-  margin: 0;
-  font-size: 30px;
-  font-weight: 300;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.gate-card .sub { margin: 6px 0 20px; color: var(--accent); letter-spacing: 0.04em; }
-.gate-card .blurb { margin: 0 0 26px; color: var(--dim); text-align: left; }
-.gate-card .fineprint { margin: 18px 0 0; font-size: 11px; color: #6b7f9e; }
-
 /* ---------- panels ---------- */
 
 .panel {
@@ -222,28 +185,6 @@ button {
 
 button:hover { background: rgba(111, 180, 255, 0.2); border-color: rgba(111, 180, 255, 0.45); }
 button:active { transform: translateY(1px); }
-
-button.primary {
-  display: block;
-  width: 100%;
-  margin-bottom: 8px;
-  padding: 11px;
-  font-size: 14px;
-  letter-spacing: 0.05em;
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #04101f;
-  font-weight: 600;
-}
-
-button.primary:hover { background: #8ac4ff; }
-
-button.ghost {
-  display: block;
-  width: 100%;
-  background: transparent;
-  color: var(--dim);
-}
 
 input[type="text"], input[type="number"] {
   min-width: 0;

@@ -170,7 +170,7 @@ export class BodyList {
 }
 
 /**
- * The View, Time, Audio and OSC panels, which are identical in both front ends. Built
+ * The Audio, View, Time and OSC panels, which are identical in both front ends. Built
  * here rather than written into each view's markup so the desktop view and the CRAIVE
  * band cannot end up with different controls.
  *
@@ -183,7 +183,23 @@ export class Controls {
     this.serverWsUrl = '';
     this.activeWsUrl = '';
     this.passThrough = {};
+    // Audio comes first: Start audio is the only way to turn the sound on, so it must not
+    // be scrolled out of sight on a laptop-height screen.
     root.insertAdjacentHTML('beforeend', `
+      <section class="panel">
+        <h2>Audio</h2>
+        <label class="ctl">
+          <span>Volume <output id="out-volume">80%</output></span>
+          <input id="in-volume" type="range" min="0" max="100" value="80">
+        </label>
+        <label class="check"><input id="in-doppler" type="checkbox" checked> Doppler shift</label>
+        ${options.heading
+          ? '<label class="check"><input id="in-heading" type="checkbox" checked> Face direction of travel</label>'
+          : ''}
+        <label class="check"><input id="in-labels" type="checkbox" checked> Labels and orbits</label>
+        <button id="btn-audio" class="wide">Start audio</button>
+      </section>
+
       <section class="panel">
         <h2>View</h2>
         <label class="check"><input id="in-craive" type="checkbox"${craiveView() ? ' checked' : ''}> CRAIVE Lab band</label>
@@ -207,20 +223,6 @@ export class Controls {
       </section>
 
       <section class="panel">
-        <h2>Audio</h2>
-        <label class="ctl">
-          <span>Volume <output id="out-volume">80%</output></span>
-          <input id="in-volume" type="range" min="0" max="100" value="80">
-        </label>
-        <label class="check"><input id="in-doppler" type="checkbox" checked> Doppler shift</label>
-        ${options.heading
-          ? '<label class="check"><input id="in-heading" type="checkbox" checked> Face direction of travel</label>'
-          : ''}
-        <label class="check"><input id="in-labels" type="checkbox" checked> Labels and orbits</label>
-        <button id="btn-audio" class="wide">Start audio</button>
-      </section>
-
-      <section class="panel">
         <h2>OSC <span id="osc-dot" class="dot"></span></h2>
         <p id="osc-status" class="readout">connecting&hellip;</p>
         <label class="field" for="in-ws-url">WebSocket server</label>
@@ -241,6 +243,14 @@ export class Controls {
     const h = this.h;
     $('in-craive').addEventListener('change', (e) => {
       switchView(e.target.checked, { inputs: this.#inputs(), ...h.onHandoff() });
+    });
+    // C flips the view as the checkbox does, in both views; on the band that works with
+    // the panels hidden. Not with Ctrl or Cmd held, which is copy.
+    document.addEventListener('keydown', (e) => {
+      if (typingIn(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key !== 'c' && e.key !== 'C') return;
+      e.preventDefault();
+      $('in-craive').click();
     });
     $('btn-pause').addEventListener('click', () => h.onTogglePause());
     $('btn-now').addEventListener('click', () => h.onNow());
@@ -353,7 +363,7 @@ export class Controls {
 
 /** The desktop view's hint line while flying. The landed one is written in index.html. */
 const FLIGHT_HINT = '↑↓ fly · ←→ turn · PgUp/PgDn climb · Shift boost · drag to look'
-  + ' · click a body or 1-9 to land';
+  + ' · click a body or 1-9 to land · C for the CRAIVE band';
 
 export class UI {
   constructor(bodies, handlers) {
@@ -368,9 +378,6 @@ export class UI {
 
   #wire() {
     const h = this.h;
-    $('gate-start').addEventListener('click', () => { this.#closeGate(); h.onStartAudio(); });
-    $('gate-silent').addEventListener('click', () => this.#closeGate());
-
     document.addEventListener('keydown', (e) => {
       if (typingIn(e.target)) return;
       if (e.key >= '1' && e.key <= '9') {
@@ -387,15 +394,6 @@ export class UI {
       }
     });
   }
-
-  #closeGate() {
-    const gate = $('gate');
-    gate.classList.add('hiding');
-    setTimeout(() => gate.remove(), 550);
-  }
-
-  /** For a page reached by the view switch, which has already had its launch. */
-  skipGate() { $('gate').remove(); }
 
   setSelected(index) {
     this.selected = index;

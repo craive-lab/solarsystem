@@ -275,7 +275,7 @@ function togglePause() {
   controls.setPaused(state.paused);
 }
 
-// The same View, Time, Audio and OSC panels as the desktop view, built by the shared
+// The same Audio, View, Time and OSC panels as the desktop view, built by the shared
 // Controls. No "face direction of travel" switch: on the band the listener is the ship,
 // and it always faces where the ship is pointing.
 const controls = new Controls(document.getElementById('right-panel'), {

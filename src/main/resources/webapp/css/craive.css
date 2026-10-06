@@ -46,7 +46,7 @@ html.craive, .craive body {
 }
 .craive #left-panel li { cursor: pointer; }
 
-/* View, Time, Audio and OSC, appended by Controls — the same panels as the desktop view. */
+/* Audio, View, Time and OSC, appended by Controls — the same panels as the desktop view. */
 .craive #right-panel {
   position: fixed;
   top: 16px;
@@ -105,6 +105,7 @@ html.craive, .craive body {
   display: grid;
   place-items: center;
   background: radial-gradient(circle at 50% 45%, rgba(18, 32, 62, 0.9), rgba(0, 0, 0, 0.97));
+  backdrop-filter: blur(3px);
   transition: opacity 0.6s ease;
 }
 .craive #gate.hiding { opacity: 0; pointer-events: none; }

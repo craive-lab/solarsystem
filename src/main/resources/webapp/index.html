@@ -25,24 +25,9 @@
 <!-- ============================================================ desktop view (js/main.js) -->
 <template id="view-desktop">
 
+<!-- No launch card: the view opens silent, and Start audio in the Audio panel is the
+     click a browser needs before it will play anything. -->
 <canvas id="scene"></canvas>
-
-<!-- Browsers refuse to start an AudioContext without a gesture, so we ask for one. -->
-<div id="gate">
-  <div class="gate-card">
-    <h1>Solar System</h1>
-    <p class="sub">Nine bodies, nine voices, one listener.</p>
-    <p class="blurb">
-      Each body sings a tone of its own. Click any of them to move the audio listener
-      onto it and hear the rest of the system from there, spatialised with HRTF panning,
-      or take off with the arrow keys and fly among them. Position, azimuth, elevation
-      and gain stream out as OSC the whole time.
-    </p>
-    <button id="gate-start" class="primary">Start with sound</button>
-    <button id="gate-silent" class="ghost">Explore silently</button>
-    <p class="fineprint">Headphones strongly recommended &mdash; HRTF panning needs two ears.</p>
-  </div>
-</div>
 
 <!-- Left: pick the body you listen from, with its live bearing from where you stand. -->
 <aside id="left-panel" class="panel">
@@ -67,12 +52,12 @@
     <p id="here-facts" class="facts"></p>
   </section>
 
-  <!-- View, Time, Audio and OSC are appended here by Controls in js/ui.js, so the
+  <!-- Audio, View, Time and OSC are appended here by Controls in js/ui.js, so the
        CRAIVE view gets exactly the same panels. -->
 
 </aside>
 
-<div id="hint">drag to orbit &middot; scroll to zoom &middot; click a body to listen from it &middot; 1-9 to jump &middot; arrow keys to fly</div>
+<div id="hint">drag to orbit &middot; scroll to zoom &middot; click a body to listen from it &middot; 1-9 to jump &middot; arrow keys to fly &middot; C for the CRAIVE band</div>
 <div id="tooltip" hidden></div>
 
 </template>
@@ -108,7 +93,7 @@
   <div id="hud-position">&mdash;</div>
   <div id="hud-nearest">&mdash;</div>
   <div id="hud-keys">&uarr;&darr; fly &middot; &larr;&rarr; turn &middot; PgUp/PgDn climb &middot; Shift boost
-    &middot; click a body to fly to it &middot; H HUD &middot; L labels &middot; P panels</div>
+    &middot; click a body to fly to it &middot; H HUD &middot; L labels &middot; P panels &middot; C desktop view</div>
 </div>
 
 <div id="gate">
@@ -129,6 +114,7 @@
       <span><kbd>H</kbd></span><span>operator HUD on the front wall</span>
       <span><kbd>L</kbd></span><span>audience labels and orbits</span>
       <span><kbd>P</kbd></span><span>operator panels (land on the walls)</span>
+      <span><kbd>C</kbd></span><span>switch to the desktop view</span>
     </div>
     <button id="gate-start">Launch</button>
   </div>
