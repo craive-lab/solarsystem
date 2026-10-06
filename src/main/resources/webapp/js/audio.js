@@ -217,9 +217,41 @@ export class AudioEngine {
     this.volume = 0.8;
   }
 
-  /** Must be called from a user gesture; browsers will not start audio otherwise. */
+  /**
+   * Builds the graph if need be and starts it. Browsers only start audio from a user
+   * gesture: called outside one, the context waits suspended, and this promise with it,
+   * until start() is called again from one. See startWithoutGesture().
+   */
   async start() {
     if (this.running) return;
+    if (!this.ctx) this.#build();
+    if (this.ctx.state === 'suspended') await this.ctx.resume();
+    this.running = true;
+  }
+
+  /**
+   * start() for a page nobody has clicked on yet, which is what the view switch reloads
+   * into. Chrome carries the click on the switch across a same-site navigation, so this
+   * usually starts at once; other browsers hold the context until the first click or key
+   * press anywhere, which then starts it.
+   */
+  startWithoutGesture() {
+    return new Promise((resolve, reject) => {
+      const events = ['click', 'keydown'];
+      const done = () => {
+        for (const type of events) window.removeEventListener(type, retry, true);
+        resolve();
+      };
+      // Click rather than pointerdown: by the time a click reaches the Start audio button,
+      // audio started on its pointerdown would already be running, and the button would
+      // stop it again.
+      const retry = () => { if (!this.running) this.start().then(done, reject); };
+      for (const type of events) window.addEventListener(type, retry, true);
+      this.start().then(done, reject);
+    });
+  }
+
+  #build() {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) throw new Error('This browser has no Web Audio support.');
 
@@ -246,9 +278,6 @@ export class AudioEngine {
     this.master.gain.setValueAtTime(0, now);
     this.master.gain.linearRampToValueAtTime(this.volume, now + 1.2);
     for (const v of this.voices) v.start(now);
-
-    if (ctx.state === 'suspended') await ctx.resume();
-    this.running = true;
   }
 
   stop() {
@@ -260,6 +289,7 @@ export class AudioEngine {
     this.master.gain.linearRampToValueAtTime(0, now + 0.3);
     for (const v of this.voices) v.stop(now + 0.4);
     setTimeout(() => ctx.close().catch(() => {}), 600);
+    this.ctx = null; // the next start() builds a fresh graph
     this.voices = [];
     this.running = false;
   }

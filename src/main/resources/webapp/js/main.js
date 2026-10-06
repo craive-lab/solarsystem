@@ -19,7 +19,7 @@ import { AudioEngine, computeField } from './audio.js';
 import { OscBridge } from './oscbridge.js';
 import { Radar } from './radar.js';
 import { Ship } from './flight.js';
-import { UI, speedFromSlider, savedWsUrl, checkWsUrl, typingIn } from './ui.js';
+import { UI, speedFromSlider, savedWsUrl, checkWsUrl, typingIn, takeHandoff } from './ui.js';
 
 const state = {
   epochJd: julianDate(Date.now()),
@@ -257,9 +257,9 @@ const audio = new AudioEngine(BODIES);
 const oscBridge = new OscBridge(BODIES);
 const radar = new Radar(document.getElementById('radar'), BODIES);
 
-async function startAudio() {
+async function startAudio(withoutGesture = false) {
   try {
-    await audio.start();
+    await (withoutGesture ? audio.startWithoutGesture() : audio.start());
     ui.setAudioRunning(true);
     oscBridge.sendAudioState(true);
   } catch (err) {
@@ -281,6 +281,9 @@ const ui = new UI(BODIES, {
     }
   },
   onTogglePause: () => { state.paused = !state.paused; ui.setPaused(state.paused); },
+  onHandoff: () => ({
+    epochJd: state.epochJd, simDays: state.simDays, paused: state.paused, audio: audio.running
+  }),
   onNow: () => { state.simDays = 0; state.epochJd = julianDate(Date.now()); },
   onSpeed: (d) => { state.daysPerSecond = d; },
   onTilt: (t) => { state.tiltGain = t; },
@@ -416,14 +419,25 @@ window.addEventListener('resize', () => {
 
 // ---------------------------------------------------------------- start
 
+// Arrived by the view switch: carry on where the other view left off, past the launch card.
+const handoff = takeHandoff();
+if (handoff) {
+  state.epochJd = handoff.epochJd;
+  state.simDays = handoff.simDays;
+  state.paused = handoff.paused;
+  ui.controls.restore(handoff.inputs);
+  ui.skipGate();
+}
+
 sky.step(centuries(state.epochJd), state.tiltGain, state.daysPerSecond);
 sky.refreshOrbitLines(centuries(state.epochJd), state.tiltGain);
 controls.target.copy(positions[state.listener]);
 camera.position.copy(controls.target).add(new THREE.Vector3(0, 0.55, 1).setLength(175));
 ui.setSelected(state.listener);
 sky.setHighlight(state.listener);
-ui.setPaused(false);
+ui.setPaused(state.paused);
 ui.setAudioRunning(false);
+if (handoff?.audio) startAudio(true);
 initOsc();
 renderer.setAnimationLoop(tick);
 

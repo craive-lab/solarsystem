@@ -27,7 +27,7 @@ import { BODIES, julianDate, centuries, J2000 } from './bodies.js';
 import { SolarSystemScene } from './scenery.js';
 import { AudioEngine, computeField } from './audio.js';
 import { OscBridge } from './oscbridge.js';
-import { BodyList, Controls, savedWsUrl, checkWsUrl, speedFromSlider, typingIn } from './ui.js';
+import { BodyList, Controls, savedWsUrl, checkWsUrl, speedFromSlider, typingIn, takeHandoff } from './ui.js';
 import { bandDirection } from './bandMath.js';
 import { BandCapture } from './bandCapture.js';
 import { OperatorHud } from './operatorHud.js';
@@ -275,11 +275,14 @@ function togglePause() {
   controls.setPaused(state.paused);
 }
 
-// The same Time, Audio and OSC panels as the desktop view, built by the shared Controls.
-// No "face direction of travel" switch: on the band the listener is the ship, and it
-// always faces where the ship is pointing.
+// The same View, Time, Audio and OSC panels as the desktop view, built by the shared
+// Controls. No "face direction of travel" switch: on the band the listener is the ship,
+// and it always faces where the ship is pointing.
 const controls = new Controls(document.getElementById('right-panel'), {
   onTogglePause: togglePause,
+  onHandoff: () => ({
+    epochJd: state.epochJd, simDays: state.simDays, paused: state.paused, audio: audio.running
+  }),
   onNow: () => { state.simDays = 0; state.epochJd = julianDate(Date.now()); },
   onSpeed: (d) => { state.daysPerSecond = d; },
   onTilt: (t) => { state.tiltGain = t; },
@@ -302,14 +305,9 @@ const controls = new Controls(document.getElementById('right-panel'), {
   }
 }, { heading: false });
 
-async function launch() {
-  const gate = document.getElementById('gate');
-  if (gate) {
-    gate.classList.add('hiding');
-    setTimeout(() => gate.remove(), 600);
-  }
+async function startAudio(withoutGesture = false) {
   try {
-    await audio.start();
+    await (withoutGesture ? audio.startWithoutGesture() : audio.start());
     controls.setAudioRunning(true);
     oscBridge.sendAudioState(true);
   } catch (err) {
@@ -318,7 +316,30 @@ async function launch() {
   }
 }
 
+function launch() {
+  const gate = document.getElementById('gate');
+  if (gate) {
+    gate.classList.add('hiding');
+    setTimeout(() => gate.remove(), 600);
+  }
+  startAudio();
+}
+
 document.getElementById('gate-start').addEventListener('click', launch);
+
+// Arrived by the view switch: carry on where the other view left off, past the launch
+// card, and with the panels up, since that is where the switch was just used.
+const handoff = takeHandoff();
+if (handoff) {
+  state.epochJd = handoff.epochJd;
+  state.simDays = handoff.simDays;
+  state.paused = handoff.paused;
+  controls.setPaused(state.paused);
+  controls.restore(handoff.inputs);
+  document.getElementById('gate').remove();
+  document.body.classList.remove('bare');
+  if (handoff.audio) startAudio(true);
+}
 
 function connectOsc(url) {
   controls.setActiveWsUrl(url);

@@ -101,7 +101,7 @@ direction of travel, the Sun is always about 90° off one shoulder.
 | **Orbit tilt** | 1×–8× exaggeration of orbital inclination |
 | **Doppler** | pitch shift from radial velocity |
 | **Face direction of travel** | off = the listener uses the camera's orientation instead |
-| **CRAIVE Lab band** | reload into the CRAIVE view; untick it there to come back |
+| **CRAIVE Lab band** | switch to the CRAIVE view, keeping the date, settings and sound; untick it there to come back |
 
 ### Flying on the desktop
 
@@ -176,10 +176,17 @@ eight projectors, and let Pixelwarp do the warping and blending.
 
 The desktop view and the CRAIVE view are the same page. `?mode=craive` picks the view at
 load; without it you get the desktop view. Once the page is up, the **CRAIVE Lab band**
-checkbox in the View panel switches between them by reloading, so the simulation clock,
-rate and audio start afresh. On the band the panels start hidden, so press <kbd>P</kbd>
-first to get at it. Only one view runs per page load: they need differently configured
-WebGL contexts, and the band's capture targets are too large to leave lying around.
+checkbox in the View panel switches between them. Only one view runs per page load —
+they need differently configured WebGL contexts, and the band's capture targets are too
+large to leave lying around — so the switch reloads the page, but it carries the simulated
+date, pause, every panel setting and the sound across, and goes straight past the launch
+card. Chrome resumes the sound by itself after the reload; Firefox and Safari hold it until
+your first click or key press.
+
+Arriving on the band by the switch leaves the panels up, since that is where you just
+were. Open `?mode=craive` fresh and they start hidden for the show; press <kbd>P</kbd> to
+get at the switch. Where you are does not carry over: the band starts the ship at its
+usual spot below the ecliptic, and the desktop starts on Earth.
 
 ### Flying
 

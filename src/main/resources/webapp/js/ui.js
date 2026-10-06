@@ -61,17 +61,43 @@ export function typingIn(target) {
 /** Whether this page load is the CRAIVE band. The <head> of index.html decides, from ?mode=craive. */
 const craiveView = () => document.documentElement.classList.contains('craive');
 
+/** Where the view switch leaves its handoff. sessionStorage keeps it to this tab. */
+const HANDOFF_KEY = 'solarsystem.handoff';
+
 /**
  * Reloads into the other view, keeping the rest of the query string (?test= and the like).
  * One view per page load: they want differently configured WebGL contexts, and neither
  * tears its renderer down.
+ *
+ * The handoff carries the clock, the panel settings and whether sound was on across the
+ * reload, so the other view picks up where this one left off instead of starting at its
+ * launch card.
  */
-function switchView(craive) {
+function switchView(craive, handoff) {
+  try {
+    sessionStorage.setItem(HANDOFF_KEY, JSON.stringify({ ...handoff, at: Date.now() }));
+  } catch { /* storage disabled: the other view just starts afresh */ }
   const url = new URL(location.href);
   if (craive) url.searchParams.set('mode', 'craive');
   else url.searchParams.delete('mode');
   location.assign(url);
 }
+
+/** What the view switch left for this page load, or null if it was not reached that way. */
+export function takeHandoff() {
+  try {
+    const raw = sessionStorage.getItem(HANDOFF_KEY);
+    sessionStorage.removeItem(HANDOFF_KEY);
+    const handoff = raw ? JSON.parse(raw) : null;
+    // A switch whose page never loaded must not ambush a visit much later.
+    return handoff && Date.now() - handoff.at < 30000 ? handoff : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The panel inputs the view switch carries over. Only the desktop view has in-heading. */
+const CARRIED_INPUTS = ['in-speed', 'in-tilt', 'in-volume', 'in-doppler', 'in-heading', 'in-labels', 'in-osc-rate'];
 
 /** Slider position 0-1000 to simulation rate in days per second, logarithmically. */
 export const speedFromSlider = (v) => 0.05 * Math.pow(6000, v / 1000);
@@ -156,6 +182,7 @@ export class Controls {
     this.h = handlers;
     this.serverWsUrl = '';
     this.activeWsUrl = '';
+    this.passThrough = {};
     root.insertAdjacentHTML('beforeend', `
       <section class="panel">
         <h2>View</h2>
@@ -212,7 +239,9 @@ export class Controls {
 
   #wire(options) {
     const h = this.h;
-    $('in-craive').addEventListener('change', (e) => switchView(e.target.checked));
+    $('in-craive').addEventListener('change', (e) => {
+      switchView(e.target.checked, { inputs: this.#inputs(), ...h.onHandoff() });
+    });
     $('btn-pause').addEventListener('click', () => h.onTogglePause());
     $('btn-now').addEventListener('click', () => h.onNow());
     $('btn-audio').addEventListener('click', () => h.onToggleAudio());
@@ -255,6 +284,38 @@ export class Controls {
     };
     $('btn-ws-apply').addEventListener('click', applyWsUrl);
     $('in-ws-url').addEventListener('keydown', (e) => { if (e.key === 'Enter') applyWsUrl(); });
+  }
+
+  #inputs() {
+    // Values for inputs this view lacks ride through untouched, so the desktop's heading
+    // switch survives a round trip through the band.
+    const values = { ...this.passThrough };
+    for (const id of CARRIED_INPUTS) {
+      const el = $(id);
+      if (el) values[id] = el.type === 'checkbox' ? el.checked : el.value;
+    }
+    return values;
+  }
+
+  /**
+   * Puts the panel inputs back as the view switch found them. Each one fires the event a
+   * user would, so the readouts and the view's state follow by the usual route.
+   */
+  restore(values = {}) {
+    for (const [id, value] of Object.entries(values)) {
+      const el = $(id);
+      if (!el) {
+        this.passThrough[id] = value;
+        continue;
+      }
+      if (el.type === 'checkbox') {
+        el.checked = value;
+        el.dispatchEvent(new Event('change'));
+      } else {
+        el.value = value;
+        el.dispatchEvent(new Event('input'));
+      }
+    }
   }
 
   setLabels(on) { $('in-labels').checked = on; }
@@ -332,6 +393,9 @@ export class UI {
     gate.classList.add('hiding');
     setTimeout(() => gate.remove(), 550);
   }
+
+  /** For a page reached by the view switch, which has already had its launch. */
+  skipGate() { $('gate').remove(); }
 
   setSelected(index) {
     this.selected = index;
