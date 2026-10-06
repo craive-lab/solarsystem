@@ -5,6 +5,10 @@
  * body is a PannerNode at its real (compressed) position, so selecting a different body
  * genuinely changes what you hear rather than just moving the camera. The same geometry
  * that drives the audio is what goes out over OSC.
+ *
+ * The arrow keys take off: the listener leaves the body for a ship of its own, flown with
+ * the same controls as the CRAIVE band (flight.js), and the camera becomes its cockpit.
+ * Clicking a body, or 1-9, lands on it again.
  */
 
 import * as THREE from 'three';
@@ -14,7 +18,8 @@ import { SolarSystemScene } from './scenery.js';
 import { AudioEngine, computeField } from './audio.js';
 import { OscBridge } from './oscbridge.js';
 import { Radar } from './radar.js';
-import { UI, speedFromSlider, savedWsUrl, checkWsUrl } from './ui.js';
+import { Ship } from './flight.js';
+import { UI, speedFromSlider, savedWsUrl, checkWsUrl, typingIn } from './ui.js';
 
 const state = {
   epochJd: julianDate(Date.now()),
@@ -22,7 +27,7 @@ const state = {
   daysPerSecond: speedFromSlider(583),
   paused: false,
   tiltGain: 1.0,
-  listener: 3,            // Earth
+  listener: 3,            // Earth; -1 while flying
   headingMode: 'orbit',   // 'orbit' or 'camera'
   oscRateHz: 30,
   showDecor: true
@@ -63,21 +68,30 @@ const field = [];
 const fwd = new THREE.Vector3(0, 0, -1);
 const up = new THREE.Vector3(0, 1, 0);
 const listener = { position: positions[state.listener], velocity: velocities[state.listener], index: state.listener, name: BODIES[state.listener].name };
+const ship = new Ship('ship');
 
 /**
  * Where the listener stands and which way it faces. On a planet that is the body's own
  * position and its direction of travel, so the whole sound field rotates as it orbits.
+ * In flight it is the ship and its heading.
  */
 function updateListenerFrame() {
   const n = state.listener;
-  listener.position = positions[n];
-  listener.velocity = velocities[n];
+  const flying = n < 0;
+  listener.position = flying ? ship.position : positions[n];
+  listener.velocity = flying ? ship.velocity : velocities[n];
   listener.index = n;
-  listener.name = BODIES[n].name;
+  listener.name = flying ? ship.name : BODIES[n].name;
 
   if (state.headingMode === 'camera') {
     camera.getWorldDirection(fwd);
     up.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+    return;
+  }
+  if (flying) {
+    // The ship flies level, so the ears stay level however far the view is tilted.
+    fwd.copy(ship.forward);
+    up.copy(ship.up);
     return;
   }
   if (!BODIES[n].elements) {
@@ -98,6 +112,7 @@ function updateListenerFrame() {
 // ---------------------------------------------------------------- camera follow
 
 const camOffset = new THREE.Vector3();
+const lookDir = new THREE.Vector3();
 const transStart = new THREE.Vector3();
 let transition = 1;
 let transStartDist = 0;
@@ -111,6 +126,15 @@ function desiredDistance(index) {
 
 function selectBody(index) {
   if (index === state.listener || index < 0) return;
+  if (state.listener < 0) {
+    // Landing. Aim the orbit at a point dead ahead, as far off as the body, so the
+    // approach below swings the view round onto it instead of cutting.
+    camera.getWorldDirection(lookDir);
+    controls.target.copy(camera.position)
+      .addScaledVector(lookDir, camera.position.distanceTo(positions[index]));
+    controls.enabled = true;
+    ship.releaseAll();
+  }
   state.listener = index;
   transStart.copy(controls.target);
   transStartDist = camera.position.distanceTo(controls.target);
@@ -120,6 +144,40 @@ function selectBody(index) {
   oscBridge.sendSelect(index, BODIES[index].name);
   sky.setHighlight(index);
 }
+
+// ---------------------------------------------------------------- flight
+
+/** Radians the view turns per pixel dragged in flight, and how far it may tilt. */
+const LOOK_RATE = 0.004;
+const MAX_PITCH = THREE.MathUtils.degToRad(85);
+
+/** The view's tilt in flight. The ship itself flies level; only the camera looks up or down. */
+let viewPitch = 0;
+
+/**
+ * Lifts off from the body underfoot. The ship starts exactly where the camera is, heading
+ * where it looks, and the view keeps its tilt, so nothing on screen jumps.
+ */
+function takeOff() {
+  camera.getWorldDirection(lookDir);
+  ship.position.copy(camera.position);
+  ship.velocity.set(0, 0, 0);
+  ship.yaw = Math.atan2(lookDir.x, -lookDir.z);
+  viewPitch = THREE.MathUtils.clamp(Math.asin(lookDir.y), -MAX_PITCH, MAX_PITCH);
+  state.listener = -1;
+  transition = 1;           // abandon a landing still under way
+  controls.enabled = false; // dragging looks around instead of orbiting
+  ui.setFlying();
+  oscBridge.sendSelect(-1, ship.name);
+  sky.setHighlight(-1);
+}
+
+window.addEventListener('keydown', (e) => {
+  if (typingIn(e.target)) return; // arrow keys in the WebSocket box are editing it
+  if (ship.press(e) && e.key !== 'Shift' && state.listener >= 0) takeOff();
+});
+window.addEventListener('keyup', (e) => ship.release(e));
+window.addEventListener('blur', () => ship.releaseAll());
 
 // ---------------------------------------------------------------- picking
 
@@ -137,15 +195,34 @@ function pickAt(clientX, clientY) {
   return hits.length ? hits[0].object.userData.index : -1;
 }
 
-canvas.addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY }; });
+let dragAt = null;  // last pointer position of a look-around drag in flight
+
+canvas.addEventListener('pointerdown', (e) => {
+  downAt = { x: e.clientX, y: e.clientY };
+  if (state.listener < 0) {
+    dragAt = { x: e.clientX, y: e.clientY };
+    canvas.setPointerCapture(e.pointerId); // OrbitControls does this when it is in charge
+  }
+});
 canvas.addEventListener('pointerup', (e) => {
+  dragAt = null;
   if (!downAt) return;
   const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y);
   downAt = null;
-  if (moved > 6) return;               // that was an orbit drag, not a click
+  if (moved > 6) return;               // that was a drag, not a click
   selectBody(pickAt(e.clientX, e.clientY));
 });
-canvas.addEventListener('pointermove', (e) => { hoverPixel = { x: e.clientX, y: e.clientY }; });
+canvas.addEventListener('pointercancel', () => { dragAt = null; downAt = null; });
+canvas.addEventListener('pointermove', (e) => {
+  hoverPixel = { x: e.clientX, y: e.clientY };
+  // In flight a drag grabs the sky, as the orbit drag does: across turns the ship, and up
+  // and down tilts the view.
+  if (dragAt && state.listener < 0) {
+    ship.yaw -= (e.clientX - dragAt.x) * LOOK_RATE;
+    viewPitch = THREE.MathUtils.clamp(viewPitch + (e.clientY - dragAt.y) * LOOK_RATE, -MAX_PITCH, MAX_PITCH);
+    dragAt = { x: e.clientX, y: e.clientY };
+  }
+});
 canvas.addEventListener('pointerleave', () => { hoverPixel = null; });
 
 let cursor = '';
@@ -273,22 +350,34 @@ function tick() {
 
   sky.step(T, state.tiltGain, state.daysPerSecond);
   sky.refreshOrbitLines(T, state.tiltGain);
+  const flying = state.listener < 0;
+  if (flying) {
+    ship.beginFrame();
+    ship.fly(dt);
+    ship.endFrame(dt);
+  }
   updateListenerFrame();
   computeField(positions, velocities, listener, fwd, up, field);
 
-  // Camera rides along with the selected body while leaving orbit and zoom to the user.
-  controls.update();
-  camOffset.copy(camera.position).sub(controls.target);
-  const focus = positions[state.listener];
-  if (transition < 1) {
-    transition = Math.min(1, transition + dt / 1.4);
-    const k = easeInOutCubic(transition);
-    controls.target.lerpVectors(transStart, focus, k);
-    camOffset.setLength(Math.max(THREE.MathUtils.lerp(transStartDist, transEndDist, k), 0.01));
+  if (flying) {
+    // The camera is the ship's cockpit: turned by its heading, tilted by the view.
+    camera.position.copy(ship.position);
+    camera.rotation.set(viewPitch, -ship.yaw, 0, 'YXZ');
   } else {
-    controls.target.copy(focus);
+    // Camera rides along with the selected body while leaving orbit and zoom to the user.
+    controls.update();
+    camOffset.copy(camera.position).sub(controls.target);
+    const focus = positions[state.listener];
+    if (transition < 1) {
+      transition = Math.min(1, transition + dt / 1.4);
+      const k = easeInOutCubic(transition);
+      controls.target.lerpVectors(transStart, focus, k);
+      camOffset.setLength(Math.max(THREE.MathUtils.lerp(transStartDist, transEndDist, k), 0.01));
+    } else {
+      controls.target.copy(focus);
+    }
+    camera.position.copy(controls.target).add(camOffset);
   }
-  camera.position.copy(controls.target).add(camOffset);
 
   sky.syncVisuals(camera.position, { markerDeg: 0.9, labelDeg: 0.7 });
 

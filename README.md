@@ -88,15 +88,36 @@ direction of travel, the Sun is always about 90° off one shoulder.
 
 | | |
 |---|---|
-| click a body, or the list on the left | move the listener onto it |
-| `1`–`9` | jump to a body |
+| click a body, or the list on the left | move the listener onto it; in flight, land on it |
+| `1`–`9` | jump to a body, or land on it |
 | drag / scroll | orbit and zoom; the camera keeps tracking the selected body |
+| <kbd>↑</kbd> <kbd>↓</kbd> | take off, then fly forward and back |
+| <kbd>←</kbd> <kbd>→</kbd> | take off, then turn left and right |
+| <kbd>Page Up</kbd> <kbd>Page Dn</kbd> | take off, then climb and dive |
+| <kbd>Shift</kbd> | hold to fly four times faster |
+| drag, in flight | look around: across turns the ship, up and down tilts the view |
 | `space` | pause the simulation |
 | **Rate** | 0.05 to 300 simulated days per second |
 | **Orbit tilt** | 1×–8× exaggeration of orbital inclination |
 | **Doppler** | pitch shift from radial velocity |
 | **Face direction of travel** | off = the listener uses the camera's orientation instead |
 | **CRAIVE Lab band** | reload into the CRAIVE view; untick it there to come back |
+
+### Flying on the desktop
+
+Any arrow key, or Page Up/Down, lifts the listener off the body it is standing on and onto
+a ship of its own, flown with the same controls and the same unhurried speeds as the
+[CRAIVE band](#flying) — both views use `webapp/js/flight.js`. The ship starts exactly
+where the camera was, heading where it was looking, so nothing jumps; from then on the
+camera is the cockpit. The ship flies level and the listener with it, so a tilted view
+does not tilt what you hear. Every body is spatialised while you fly, the Sound field panel
+reads **In flight**, and the hint line along the bottom lists the flight keys.
+
+Click a body, on screen or in the list, or press `1`–`9`, to land: the view swings round
+onto it and settles into the usual orbit camera.
+
+While flying, `/ss/listener` reports index **−1** and the name `ship`, and `/ss/select`
+goes out once with the same pair at take-off. See [OSC address schema](#osc-address-schema).
 
 The **orbit tilt** control is worth a moment. The real solar system is nearly flat — every
 planet is within 7° of the ecliptic — so at 1× there is almost nothing to hear above or
@@ -397,11 +418,12 @@ then five arguments per body:
 
 ### `/ss/select` — the listener moved
 
-Sent once when you click a body.
+Sent once when you click a body, and once with index −1 and the name `ship` when you take
+off from one on the desktop.
 
 | arg | type | meaning |
 |---|---|---|
-| 0 | `i` | index |
+| 0 | `i` | index, or −1 for the ship |
 | 1 | `s` | name |
 
 ### `/ss/audio` — the audio engine started or stopped
@@ -426,8 +448,8 @@ resolves to a quarter of a day.
 
 | arg | type | meaning |
 |---|---|---|
-| 0 | `i` | index of the body |
-| 1 | `s` | name |
+| 0 | `i` | index of the body, or −1 when the listener is a ship |
+| 1 | `s` | name: the body's, `ship` while flying on the desktop, `CRAIVE` on the band |
 | 2–4 | `f` | world position x, y, z |
 | 5–7 | `f` | forward unit vector |
 | 8–10 | `f` | up unit vector |
@@ -477,6 +499,9 @@ The listener's frame is:
   25.38-day rotation is used instead, so the planets drift slowly around your head.
 * **up** — the orbital plane normal, `position × velocity`.
 * **right** — `front × up`.
+
+A ship — flying on the desktop, or the room on the CRAIVE band — flies level, so its front
+is its heading in the ecliptic plane and its up is +Y.
 
 Orbital positions come from the JPL *Keplerian Elements for Approximate Positions of the
 Major Planets*, propagated with a Newton solve of Kepler's equation. Good to a few
@@ -700,8 +725,9 @@ src/main/resources/webapp/
   js/oscbridge.js   osc.js transport and the bundle builder
   js/radar.js       the azimuth dial
   js/ui.js          panels and controls
-  js/main.js        desktop view: camera follow, picking, wiring
-  js/craive.js      band view: cube capture, unwrap shader, flight
+  js/flight.js      keyboard flight, shared by both views
+  js/main.js        desktop view: camera follow, picking, take-off and landing, wiring
+  js/craive.js      band view: band capture, unwrap shader, pick and approach
   vendor/           three.js 0.180.0, OrbitControls, osc.js 2.4.5
 tools/
   osc-monitor.py  osc-monitor.js

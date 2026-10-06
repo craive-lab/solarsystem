@@ -290,11 +290,16 @@ export class Controls {
   }
 }
 
+/** The desktop view's hint line while flying. The landed one is written in index.html. */
+const FLIGHT_HINT = '↑↓ fly · ←→ turn · PgUp/PgDn climb · Shift boost · drag to look'
+  + ' · click a body or 1-9 to land';
+
 export class UI {
   constructor(bodies, handlers) {
     this.bodies = bodies;
     this.h = handlers;
     this.selected = -1;
+    this.landedHint = $('hint').textContent;
     this.list = new BodyList($('body-list'), bodies, (index) => handlers.onSelect(index));
     this.controls = new Controls($('right-panel'), handlers, { heading: true });
     this.#wire();
@@ -337,6 +342,19 @@ export class UI {
     $('here-note').textContent = `${body.sound.note} · ${body.sound.freq.toFixed(2)} Hz`;
     $('here-timbre').textContent = body.sound.timbre;
     $('here-facts').textContent = body.facts;
+    $('hint').textContent = this.landedHint;
+  }
+
+  /** In flight there is no body underfoot, so the panel describes the ship instead. */
+  setFlying() {
+    this.selected = -1;
+    $('here-swatch').style.color = 'var(--accent)';
+    $('here-swatch').style.background = 'var(--accent)';
+    $('here-name').textContent = 'In flight';
+    $('here-note').textContent = 'listening from the ship';
+    $('here-timbre').textContent = '';
+    $('here-facts').textContent = 'Click a body or press 1–9 to land on it.';
+    $('hint').textContent = FLIGHT_HINT;
   }
 
   setAudioRunning(running) { this.controls.setAudioRunning(running); }

@@ -31,6 +31,7 @@ import { BodyList, Controls, savedWsUrl, checkWsUrl, speedFromSlider, typingIn }
 import { bandDirection } from './bandMath.js';
 import { BandCapture } from './bandCapture.js';
 import { OperatorHud } from './operatorHud.js';
+import { Ship } from './flight.js';
 
 /** The lab's screen, from `CRAIVE specs for content creators` (J. Parkman Carter, RPI). */
 const BAND = {
@@ -47,23 +48,15 @@ const BAND = {
   cubeSize: 2048       // fallback cubemap, side faces only
 };
 
-/**
- * Flight model. Yaw only: a room full of people should never have the horizon roll, and
- * the speeds are deliberately unhurried — this is a space you walk around inside, not a
- * game. Earth's orbit has a radius of 12 scene units and Neptune's about 78.
- */
-const SHIP = {
-  speed: 14,        // scene units per second
-  boost: 4,         // multiplier while Shift is held
-  turnRate: 30,     // degrees per second
-  startRadius: 30,
+/** Where the ship starts. The flight model itself is in flight.js, shared with the desktop. */
+const START = {
+  radius: 30,
   // Start below the ecliptic, so the system reads as a disc rather than the edge-on line
   // it becomes from within the plane — and specifically below rather than above, because
   // the band is not symmetric: it reaches 23.6 degrees above the horizon but only 13.6
   // below. Looking up at the disc therefore has most of the room's pixels to spread into.
   // At this height the Sun sits about 11 degrees up, just above the band's midline.
-  startHeight: -6,
-  minRadius: 3.2    // never fly into the middle of the Sun
+  height: -6
 };
 
 // Defaults match the control panel's initial slider positions.
@@ -118,28 +111,11 @@ const operatorHud = new OperatorHud({
 
 // ---------------------------------------------------------------- the ship
 
-const ship = {
-  position: new THREE.Vector3(0, SHIP.startHeight, SHIP.startRadius),
-  velocity: new THREE.Vector3(),
-  // Heading 0 points along -Z, which from the starting position on +Z is straight at the
-  // Sun: the system is dead ahead on the front wall when the doors open.
-  yaw: 0,
-  index: -1,             // the listener is not a body, it is the room
-  name: 'CRAIVE'
-};
-
-const forward = new THREE.Vector3(0, 0, -1);
-const shipUp = new THREE.Vector3(0, 1, 0);
-const prevPosition = new THREE.Vector3().copy(ship.position);
-const held = new Set();
-
-/**
- * Arrow keys fly, PageUp/PageDown climb and dive. Keys are collected here and applied
- * once per frame, so a held key glides instead of stuttering at the OS repeat rate.
- */
-const FLIGHT_KEYS = new Set([
-  'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'pageup', 'pagedown', 'shift'
-]);
+// The listener is not a body, it is the room. Heading 0 points along -Z, which from the
+// starting position on +Z is straight at the Sun: the system is dead ahead on the front
+// wall when the doors open.
+const ship = new Ship('CRAIVE');
+ship.position.set(0, START.height, START.radius);
 
 window.addEventListener('keydown', (e) => {
   if (typingIn(e.target)) return; // the panels carry text boxes now
@@ -168,36 +144,11 @@ window.addEventListener('keydown', (e) => {
     document.body.classList.toggle('bare');
     return;
   }
-  if (!FLIGHT_KEYS.has(k) || e.ctrlKey || e.metaKey || e.altKey) return;
-  held.add(k);
-  if (k !== 'shift') travel.index = -1; // taking the controls cancels an approach
-  e.preventDefault(); // these keys would otherwise scroll the page
+  // Taking the controls cancels an approach.
+  if (ship.press(e) && k !== 'shift') travel.index = -1;
 });
-window.addEventListener('keyup', (e) => held.delete(e.key.toLowerCase()));
-// Alt-tabbing away eats the keyup, and a blurred window must not keep flying.
-window.addEventListener('blur', () => held.clear());
-
-function flyShip(dt) {
-  // Increasing yaw swings the heading from -Z toward +X, which is clockwise seen from
-  // above: a turn to starboard. So the right arrow adds and the left arrow subtracts.
-  const turn = (held.has('arrowright') ? 1 : 0) - (held.has('arrowleft') ? 1 : 0);
-  if (turn) ship.yaw += turn * THREE.MathUtils.degToRad(SHIP.turnRate) * dt;
-
-  // Level flight: the heading never pitches, so the room's horizon stays put.
-  forward.set(Math.sin(ship.yaw), 0, -Math.cos(ship.yaw));
-
-  let move = (held.has('arrowup') ? 1 : 0) - (held.has('arrowdown') ? 1 : 0);
-  const climb = (held.has('pageup') ? 1 : 0) - (held.has('pagedown') ? 1 : 0);
-  if (!move && !climb) return;
-
-  const speed = SHIP.speed * (held.has('shift') ? SHIP.boost : 1) * dt;
-  ship.position.addScaledVector(forward, move * speed);
-  ship.position.y += climb * speed;
-
-  // Push back out if someone flies into the Sun.
-  const r = ship.position.length();
-  if (r < SHIP.minRadius) ship.position.multiplyScalar(SHIP.minRadius / Math.max(r, 1e-6));
-}
+window.addEventListener('keyup', (e) => ship.release(e));
+window.addEventListener('blur', () => ship.releaseAll());
 
 // ---------------------------------------------------------------- pick and approach
 
@@ -415,25 +366,24 @@ function tick() {
   sky.step(T, state.tiltGain, state.daysPerSecond);
   sky.refreshOrbitLines(T, state.tiltGain);
 
-  prevPosition.copy(ship.position);
-  flyShip(dt);
+  ship.beginFrame();
+  ship.fly(dt);
   updateApproach(dt);
-  // The ship's own motion matters to the Doppler shift as much as the planets' does.
-  ship.velocity.copy(ship.position).sub(prevPosition).divideScalar(Math.max(dt, 1e-4));
+  ship.endFrame(dt);
 
-  computeField(positions, velocities, ship, forward, shipUp, field);
+  computeField(positions, velocities, ship, ship.forward, ship.up, field);
 
   // ~0.9° beacons / 0.7° labels: constant on the wall, independent of cube-face pixels.
   sky.syncVisuals(ship.position, { markerDeg: 0.9, labelDeg: 0.7 });
 
-  audio.update(positions, field, ship, forward, shipUp, phases);
+  audio.update(positions, field, ship, ship.forward, ship.up, phases);
 
   if (state.oscRateHz > 0) {
     oscAccumulator += dt;
     if (oscAccumulator >= 1 / state.oscRateHz) {
       oscAccumulator = 0;
       oscBridge.sendFrame({
-        positions, field, listener: ship, fwd: forward, up: shipUp, phases,
+        positions, field, listener: ship, fwd: ship.forward, up: ship.up, phases,
         simDays: state.simDays, j2000Days: jd - J2000,
         daysPerSecond: state.daysPerSecond, paused: state.paused
       });
