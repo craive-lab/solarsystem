@@ -7,7 +7,9 @@
  */
 
 import * as THREE from 'three';
-import { BODIES, displayRadius, orbitPoints, scenePosition } from './bodies.js';
+import {
+  BODIES, FASTEST_SPIN_DAYS, displayRadius, equatorialToScene, orbitPoints, scenePosition, spinAngle
+} from './bodies.js';
 import { aimYawOnly, angularSize } from './billboard.js';
 
 const DEG = Math.PI / 180;
@@ -18,6 +20,13 @@ const OBLIQUITY = 23.4393 * DEG;
 const VELOCITY_H_DAYS = 0.5;
 /** Rebuild orbit lines once the epoch has drifted this far, in Julian centuries. */
 const LINE_REBUILD_T = 0.02;
+/**
+ * Turns per real second allowed to the fastest spinner, Jupiter. Real rates at the
+ * default 8 d/s would turn Jupiter 19 times a second, which a 60 Hz frame can only alias,
+ * so past this every body's spin slows by the same factor and the ratios stay true.
+ */
+const MAX_SPIN_HZ = 0.25;
+const SPIN_AXIS = new THREE.Vector3(0, 1, 0);
 
 const PLANET_MAPS = {
   Sun: 'textures/planets/sun.jpg',
@@ -105,6 +114,20 @@ function ringGeometry(inner, outer, segments) {
   }
   uv.needsUpdate = true;
   return geo;
+}
+
+/**
+ * Turns a sphere's local +Y onto the body's north pole and its local +X onto the node
+ * where the body's equator crosses Earth's, the origin the IAU measures W from. A
+ * three.js sphere puts the map's prime meridian on +X, so a further turn of W about +Y
+ * finishes the job.
+ */
+function poleQuaternion(body) {
+  const [ra, dec] = body.spin.pole;
+  const pole = equatorialToScene(ra, dec, new THREE.Vector3());
+  const node = equatorialToScene(ra + 90, 0, new THREE.Vector3());
+  const third = new THREE.Vector3().crossVectors(node, pole);
+  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(node, pole, third));
 }
 
 function atmosphereMaterial() {
@@ -263,7 +286,7 @@ export class SolarSystemScene {
             transparent: true, opacity: 0.45, depthWrite: false
           })
         );
-        ring.rotation.set(-Math.PI / 2 + body.ring.tilt * DEG, 0, 0);
+        ring.rotation.set(-Math.PI / 2, 0, 0); // the equator, which the mesh has tilted
         mesh.add(ring);
       }
 
@@ -307,7 +330,10 @@ export class SolarSystemScene {
         mesh.add(this.atmosphere);
       }
 
-      return { body, index, radius, mesh, marker, labelSprite, labelAspect: label.aspect, orbit, ring };
+      return {
+        body, index, radius, mesh, marker, labelSprite, labelAspect: label.aspect, orbit, ring,
+        tilt: poleQuaternion(body)
+      };
     });
 
     this.pickables = this.objects.flatMap((o) => [o.mesh, o.marker]);
@@ -315,6 +341,10 @@ export class SolarSystemScene {
     this.positions = BODIES.map(() => new THREE.Vector3());
     this.velocities = BODIES.map(() => new THREE.Vector3());
     this.phases = new Float64Array(BODIES.length);
+    /** Each body's prime meridian angle W, in radians. */
+    this.spins = new Float64Array(BODIES.length);
+    this._spinDays = 0;
+    this._spinT = null;
 
     this._scratch = [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }];
     this._vec = new THREE.Vector3();
@@ -423,12 +453,19 @@ export class SolarSystemScene {
    *        second — which is what the Doppler shift and the OSC stream want.
    */
   step(T, tiltGain, daysPerSecond) {
+    // Spin keeps its own clock. It starts on the real one, so the first frame shows each
+    // body turned as it really is, and runs with it until Jupiter would pass MAX_SPIN_HZ.
+    const slow = Math.min(1, MAX_SPIN_HZ * FASTEST_SPIN_DAYS / daysPerSecond);
+    this._spinDays = this._spinT === null ? T * 36525 : this._spinDays + (T - this._spinT) * 36525 * slow;
+    this._spinT = T;
+
     const hT = VELOCITY_H_DAYS / 36525;
     for (let n = 0; n < BODIES.length; n++) {
       const body = BODIES[n];
       const p = scenePosition(body, T, tiltGain, this._scratch[0]);
       this.positions[n].set(p.x, p.y, p.z);
       this.phases[n] = p.meanAnomaly;
+      this.spins[n] = (spinAngle(body, this._spinDays) % 360) * DEG;
 
       // Central difference gives a velocity that already accounts for the radial warp.
       const ahead = scenePosition(body, T + hT, tiltGain, this._scratch[1]);
@@ -466,6 +503,7 @@ export class SolarSystemScene {
     for (const o of this.objects) {
       const p = this.positions[o.index];
       o.mesh.position.copy(p);
+      o.mesh.quaternion.setFromAxisAngle(SPIN_AXIS, this.spins[o.index]).premultiply(o.tilt);
       if (o.index === 0) this.sunLight.position.copy(p);
       o.marker.position.copy(p);
       const d = this._vec.copy(p).sub(viewpoint).length();

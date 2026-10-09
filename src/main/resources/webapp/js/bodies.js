@@ -35,6 +35,9 @@ export const SUN_ROTATION_DAYS = 25.38;
  * elements  [a, e, I, L, wbar, Omega] at J2000 and their rates per century
  *           a AU, everything else degrees
  * radiusKm  equatorial radius, used only for the compressed visual size
+ * spin      IAU 2009 rotation model: north pole [RA, Dec] in the J2000 equatorial frame,
+ *           and prime meridian angle W [at J2000, rate per day], all degrees. A negative
+ *           rate is a retrograde spin, as on Venus and Uranus.
  * sound     synth recipe, interpreted by AudioEngine
  */
 export const BODIES = [
@@ -42,6 +45,7 @@ export const BODIES = [
     name: 'Sun',
     color: 0xffc648,
     radiusKm: 696340,
+    spin: { pole: [286.13, 63.87], W: [84.176, 14.1844000] },
     elements: null,
     facts: 'G2V star, 99.86% of the system mass',
     sound: {
@@ -63,6 +67,7 @@ export const BODIES = [
     name: 'Mercury',
     color: 0x9a8f85,
     radiusKm: 2439.7,
+    spin: { pole: [281.0097, 61.4143], W: [329.5469, 6.1385025] },
     elements: {
       a: [0.38709927, 0.00000037], e: [0.20563593, 0.00001906], I: [7.00497902, -0.00594749],
       L: [252.25032350, 149472.67411175], wbar: [77.45779628, 0.16047689], Omega: [48.33076593, -0.12534081]
@@ -85,6 +90,7 @@ export const BODIES = [
     name: 'Venus',
     color: 0xe6c98f,
     radiusKm: 6051.8,
+    spin: { pole: [272.76, 67.16], W: [160.20, -1.4813688] },
     elements: {
       a: [0.72333566, 0.00000390], e: [0.00677672, -0.00004107], I: [3.39467605, -0.00078890],
       L: [181.97909950, 58517.81538729], wbar: [131.60246718, 0.00268329], Omega: [76.67984255, -0.27769418]
@@ -107,6 +113,7 @@ export const BODIES = [
     name: 'Earth',
     color: 0x4d8fe0,
     radiusKm: 6371.0,
+    spin: { pole: [0.00, 90.00], W: [190.147, 360.9856235] },
     elements: {
       a: [1.00000261, 0.00000562], e: [0.01671123, -0.00004392], I: [-0.00001531, -0.01294668],
       L: [100.46457166, 35999.37244981], wbar: [102.93768193, 0.32327364], Omega: [0.0, 0.0]
@@ -130,6 +137,7 @@ export const BODIES = [
     name: 'Mars',
     color: 0xc1502e,
     radiusKm: 3389.5,
+    spin: { pole: [317.68143, 52.88650], W: [176.630, 350.89198226] },
     elements: {
       a: [1.52371034, 0.00001847], e: [0.09339410, 0.00007882], I: [1.84969142, -0.00813131],
       L: [-4.55343205, 19140.30268499], wbar: [-23.94362959, 0.44441088], Omega: [49.55953891, -0.29257343]
@@ -152,6 +160,7 @@ export const BODIES = [
     name: 'Jupiter',
     color: 0xd8b78a,
     radiusKm: 69911,
+    spin: { pole: [268.056595, 64.495303], W: [284.95, 870.5360000] },
     elements: {
       a: [5.20288700, -0.00011607], e: [0.04838624, -0.00013253], I: [1.30439695, -0.00183714],
       L: [34.39644051, 3034.74612775], wbar: [14.72847983, 0.21252668], Omega: [100.47390909, 0.20469106]
@@ -175,7 +184,8 @@ export const BODIES = [
     name: 'Saturn',
     color: 0xe8d5a8,
     radiusKm: 58232,
-    ring: { inner: 1.35, outer: 2.30, color: 0xcbb98d, tilt: 26.7 },
+    spin: { pole: [40.589, 83.537], W: [38.90, 810.7939024] },
+    ring: { inner: 1.35, outer: 2.30, color: 0xcbb98d },
     facts: 'ring system 280,000 km across but only tens of metres thick',
     sound: {
       note: 'A3', freq: 220,
@@ -196,6 +206,7 @@ export const BODIES = [
     name: 'Uranus',
     color: 0x9fdce4,
     radiusKm: 25362,
+    spin: { pole: [257.311, -15.175], W: [203.81, -501.1600928] },
     elements: {
       a: [19.18916464, -0.00196176], e: [0.04725744, -0.00004397], I: [0.77263783, -0.00242939],
       L: [313.23810451, 428.48202785], wbar: [170.95427630, 0.40805281], Omega: [74.01692503, 0.04240589]
@@ -220,6 +231,7 @@ export const BODIES = [
     name: 'Neptune',
     color: 0x3f5fd0,
     radiusKm: 24622,
+    spin: { pole: [299.36, 43.46], W: [253.18, 536.3128492] },
     elements: {
       a: [30.06992276, 0.00026291], e: [0.00859048, 0.00005105], I: [1.77004347, 0.00035372],
       L: [-55.12002969, 218.45945325], wbar: [44.96476227, -0.32241464], Omega: [131.78422574, -0.00508664]
@@ -344,6 +356,32 @@ function orbitalToEcliptic(xp, yp, omegaDeg, IDeg, OmegaDeg, out) {
   out.z = -yEcl;
   return out;
 }
+
+/** Obliquity of the ecliptic at J2000, which carries IAU poles off the equatorial frame. */
+const OBLIQUITY = 23.4392911;
+
+/**
+ * Unit vector for a J2000 equatorial direction, in the same three.js axes as
+ * `heliocentric`: tipped from the equator onto the ecliptic, then ecliptic north up.
+ */
+export function equatorialToScene(raDeg, decDeg, out) {
+  const ca = Math.cos(raDeg * DEG), sa = Math.sin(raDeg * DEG);
+  const cd = Math.cos(decDeg * DEG), sd = Math.sin(decDeg * DEG);
+  const ce = Math.cos(OBLIQUITY * DEG), se = Math.sin(OBLIQUITY * DEG);
+  const y = cd * sa;
+  out.x = cd * ca;
+  out.y = -se * y + ce * sd;
+  out.z = -(ce * y + se * sd);
+  return out;
+}
+
+/** Prime meridian angle W in degrees, `days` of rotation after J2000. */
+export function spinAngle(body, days) {
+  return body.spin.W[0] + body.spin.W[1] * days;
+}
+
+/** The shortest sidereal day in the system, in days: Jupiter's. */
+export const FASTEST_SPIN_DAYS = Math.min(...BODIES.map((b) => 360 / Math.abs(b.spin.W[1])));
 
 /** Applies the radial compression to an AU-space position, in place. */
 export function warp(p) {

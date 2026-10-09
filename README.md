@@ -517,6 +517,13 @@ arc-minutes between 1800 and 2050. Eccentricity, inclination, ascending node and
 perihelion are all included, so the orbits are genuinely elliptical and correctly oriented
 — the simulation starts at the real current date.
 
+Each body spins on the IAU rotation model: the real north pole direction and the real
+sidereal rate, so Uranus lies on its side, Venus and Uranus turn backwards, and Saturn's
+rings sit in its equator, edge-on in 2025. Real rates would turn Jupiter 19 times a second
+at the default 8 d/s, which a screen can only alias, so once Jupiter would pass a quarter
+turn per second every spin slows by the same factor. The ratios between bodies stay
+true; only the spin against the orbit is slowed.
+
 
 ## Receiver examples
 
