@@ -421,7 +421,11 @@ export class SolarSystemScene {
     if (this.skyRig) return;
     this.skyRig = new THREE.Group();
     // Equatorial sky (Y = celestial north) tilted onto the ecliptic (Y = orbit normal).
-    this.skyRig.rotation.x = OBLIQUITY;
+    // setFromRaDec and the sphere's UVs put RA 6h on +Z, a left-handed frame; heliocentric()
+    // puts it on -Z. Mirroring Z first brings the two together, and makes the tilt that
+    // carries the celestial pole toward ecliptic longitude 90° a negative one.
+    this.skyRig.scale.z = -1;
+    this.skyRig.rotation.x = -OBLIQUITY;
     this.scene.add(this.skyRig);
   }
 
