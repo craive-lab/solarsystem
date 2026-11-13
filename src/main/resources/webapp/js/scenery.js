@@ -10,10 +10,13 @@ import * as THREE from 'three';
 import {
   BODIES, FASTEST_SPIN_DAYS, displayRadius, equatorialToScene, orbitPoints, scenePosition, spinAngle
 } from './bodies.js';
+import { MOONS, TT_MINUS_UTC_DAYS, moonDisplayAxis, moonLapRate, moonOrbit } from './moons.js';
 import { aimYawOnly, angularSize } from './billboard.js';
 
 const DEG = Math.PI / 180;
+const TAU = Math.PI * 2;
 const ORBIT_SEGMENTS = 512;
+const MOON_ORBIT_SEGMENTS = 128;
 /** Earth's axial tilt; the star field is equatorial, the planets sit on the ecliptic. */
 const OBLIQUITY = 23.4393 * DEG;
 /** Half-width of the finite difference used for orbital velocity, in days. */
@@ -28,6 +31,29 @@ const LINE_REBUILD_T = 0.02;
 const MAX_SPIN_HZ = 0.25;
 const SPIN_AXIS = new THREE.Vector3(0, 1, 0);
 
+/**
+ * The moons stay on the simulation clock, so each is where it really is on the date shown.
+ * At the default 8 d/s that has Io lapping Jupiter four times a second and Phobos lapping
+ * Mars twenty-five times, which no frame rate can show as a moving dot. Each moon
+ * therefore trails a streak over the arc it covered in the last TRAIL_SECONDS of real
+ * time: a short tail on the Moon, a closed ring on Phobos.
+ */
+const TRAIL_SECONDS = 0.1;
+const TRAIL_POINTS = 96;
+/** Laps per real second between which a moon's label fades out: too fast to read. */
+const LABEL_FADE_HZ = [1, 2.5];
+/**
+ * Past this many laps per second a globe would land somewhere unrelated every frame, so
+ * only its ring is drawn.
+ */
+const MAX_FOLLOW_HZ = 12;
+/**
+ * Moon labels, orbits and streaks fade in as a family's outermost orbit grows from the
+ * first to the second of these fractions of its distance from the viewpoint. From across
+ * the system a planet keeps its one clean label; its moons appear on approach.
+ */
+const MOON_NEAR = [0.05, 0.11];
+
 const PLANET_MAPS = {
   Sun: 'textures/planets/sun.jpg',
   Mercury: 'textures/planets/mercury.jpg',
@@ -38,6 +64,11 @@ const PLANET_MAPS = {
   Saturn: 'textures/planets/saturn.jpg',
   Uranus: 'textures/planets/uranus.jpg',
   Neptune: 'textures/planets/neptune.jpg'
+};
+
+/** The one moon with a map of its own; the rest wear moonTexture(). */
+const MOON_MAPS = {
+  Moon: 'textures/moons/moon.jpg'
 };
 
 /** Soft radial falloff, used for the body markers and the Sun's corona. */
@@ -76,6 +107,47 @@ function bodyTexture(color, bands) {
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/**
+ * Mottled patches over a moon's colour, so that it reads as a globe keeping one face to
+ * its planet and not as a flat disc. Seeded, so a moon looks the same on every load.
+ */
+function moonTexture(color, seed) {
+  const W = 256, H = 128;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d');
+  const base = new THREE.Color(color);
+  const tint = new THREE.Color();
+  g.fillStyle = base.getStyle();
+  g.fillRect(0, 0, W, H);
+
+  let state = (seed + 1) * 2654435761 >>> 0;
+  const random = () => {
+    state ^= state << 13; state >>>= 0;
+    state ^= state >>> 17;
+    state ^= state << 5; state >>>= 0;
+    return state / 4294967296;
+  };
+  for (let n = 0; n < 110; n++) {
+    const x = random() * W;
+    const y = (0.12 + 0.76 * random()) * H; // patches at the poles would smear into streaks
+    const r = 3 + random() * 20;
+    const hex = '#' + tint.copy(base).multiplyScalar(0.72 + random() * 0.5).getHexString();
+    for (const cx of [x - W, x, x + W]) {   // the map meets itself at its left and right edges
+      const patch = g.createRadialGradient(cx, y, 0, cx, y, r);
+      patch.addColorStop(0, hex + '70');
+      patch.addColorStop(1, hex + '00');
+      g.fillStyle = patch;
+      g.fillRect(cx - r, y - r, r * 2, r * 2);
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = THREE.RepeatWrapping;
   return t;
 }
 
@@ -336,7 +408,73 @@ export class SolarSystemScene {
       };
     });
 
-    this.pickables = this.objects.flatMap((o) => [o.mesh, o.marker]);
+    // The moons. They are scenery: no voice, no beacon, and no place in the OSC stream.
+    // Every orbit line is this one unit circle, set onto its ellipse by a matrix each
+    // frame, so a moon is always exactly on its drawn path however fast that precesses.
+    const circle = new Float32Array(MOON_ORBIT_SEGMENTS * 3);
+    for (let n = 0; n < MOON_ORBIT_SEGMENTS; n++) {
+      circle[n * 3] = Math.cos((n / MOON_ORBIT_SEGMENTS) * TAU);
+      circle[n * 3 + 1] = Math.sin((n / MOON_ORBIT_SEGMENTS) * TAU);
+    }
+    const circleGeo = new THREE.BufferGeometry();
+    circleGeo.setAttribute('position', new THREE.BufferAttribute(circle, 3));
+    const moonSegs = high ? 48 : 24;
+
+    this.moons = MOONS.map((moon, index) => {
+      const parent = BODIES.findIndex((b) => b.name === moon.parent);
+      const radius = displayRadius(moon);
+
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(radius, moonSegs, moonSegs / 2),
+        new THREE.MeshStandardMaterial({ map: moonTexture(moon.color, index), roughness: 0.92, metalness: 0 })
+      );
+      mesh.userData.index = parent; // a click on a moon selects its planet
+      mesh.userData.moon = index;
+      this.scene.add(mesh);
+
+      // Callisto and Umbriel are nearly black; their names still have to be readable.
+      const ink = new THREE.Color(moon.color).lerp(new THREE.Color(0xffffff), 0.45);
+      const label = labelTexture(moon.name, '#' + ink.getHexString());
+      const labelSprite = this._makeBillboard(label.texture, 0xffffff, { opacity: 0, geometry: this._labelGeo });
+      this.scene.add(labelSprite);
+
+      const orbit = new THREE.LineLoop(circleGeo, new THREE.LineBasicMaterial({
+        color: moon.color, transparent: true, opacity: 0, depthWrite: false
+      }));
+      orbit.matrixAutoUpdate = false;
+      this.scene.add(orbit);
+
+      const trailGeo = new THREE.BufferGeometry();
+      for (const name of ['position', 'color']) {
+        const attribute = new THREE.BufferAttribute(new Float32Array(TRAIL_POINTS * 3), 3);
+        attribute.setUsage(THREE.DynamicDrawUsage);
+        trailGeo.setAttribute(name, attribute);
+      }
+      const trail = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({
+        vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+      }));
+      trail.matrixAutoUpdate = false;
+      trail.frustumCulled = false; // its vertices move every frame; the bounds would be stale
+      trail.visible = false;
+      this.scene.add(trail);
+
+      return {
+        moon, index, parent, radius, mesh, labelSprite, labelAspect: label.aspect, orbit, trail,
+        axis: moonDisplayAxis(moon),
+        lapsPerDay: moonLapRate(moon) / 360,
+        tint: new THREE.Color(moon.color),
+        position: new THREE.Vector3(),
+        orbitNow: moonOrbit(moon, 0)
+      };
+    });
+    /** How far each planet's family reaches from it, in scene units; 0 for a planet without one. */
+    this._moonReach = BODIES.map((_, n) =>
+      Math.max(0, ...this.moons.filter((m) => m.parent === n).map((m) => m.axis)));
+    /** Simulated days per real second while the clock is running, 0 while it is stopped. */
+    this._moonRate = 0;
+    this._decor = true;
+
+    this.pickables = this.objects.flatMap((o) => [o.mesh, o.marker]).concat(this.moons.map((m) => m.mesh));
 
     this.positions = BODIES.map(() => new THREE.Vector3());
     this.velocities = BODIES.map(() => new THREE.Vector3());
@@ -348,6 +486,8 @@ export class SolarSystemScene {
 
     this._scratch = [{ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }];
     this._vec = new THREE.Vector3();
+    this._axes = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+    this._basis = new THREE.Matrix4();
     this._lineEpoch = null;
     this._lineTilt = null;
 
@@ -377,6 +517,16 @@ export class SolarSystemScene {
         o.mesh.material.map = this._configureMap(tex);
         o.mesh.material.needsUpdate = true;
         if (prev && prev.isCanvasTexture) prev.dispose();
+      }));
+    }
+    for (const m of this.moons) {
+      const url = MOON_MAPS[m.moon.name];
+      if (!url) continue;
+      jobs.push(loader.loadAsync(url).then((tex) => {
+        const prev = m.mesh.material.map;
+        m.mesh.material.map = this._configureMap(tex);
+        m.mesh.material.needsUpdate = true;
+        prev.dispose();
       }));
     }
     const saturn = this.objects.find((o) => o.body.ring);
@@ -460,6 +610,7 @@ export class SolarSystemScene {
     // Spin keeps its own clock. It starts on the real one, so the first frame shows each
     // body turned as it really is, and runs with it until Jupiter would pass MAX_SPIN_HZ.
     const slow = Math.min(1, MAX_SPIN_HZ * FASTEST_SPIN_DAYS / daysPerSecond);
+    this._moonRate = this._spinT !== null && T !== this._spinT ? daysPerSecond : 0;
     this._spinDays = this._spinT === null ? T * 36525 : this._spinDays + (T - this._spinT) * 36525 * slow;
     this._spinT = T;
 
@@ -478,6 +629,19 @@ export class SolarSystemScene {
         .set(ahead.x - behind.x, ahead.y - behind.y, ahead.z - behind.z)
         .divideScalar(2 * VELOCITY_H_DAYS)
         .multiplyScalar(daysPerSecond);
+    }
+
+    // Each moon rides on its planet: the true ellipse about it, scaled to the drawn size.
+    const days = T * 36525 + TT_MINUS_UTC_DAYS;
+    for (const m of this.moons) {
+      const o = moonOrbit(m.moon, days, m.orbitNow);
+      const along = m.axis * (Math.cos(o.E) - o.e);
+      const across = m.axis * Math.sqrt(1 - o.e * o.e) * Math.sin(o.E);
+      m.position.set(
+        along * o.p.x + across * o.q.x,
+        along * o.p.y + across * o.q.y,
+        along * o.p.z + across * o.q.z
+      ).add(this.positions[m.parent]);
     }
   }
 
@@ -526,10 +690,93 @@ export class SolarSystemScene {
       this.corona.position.copy(this.positions[0]);
       if (this.billboard === 'cylindrical') aimYawOnly(this.corona, viewpoint);
     }
+    this._syncMoons(viewpoint, labelDeg);
+  }
+
+  /** The moons, with their orbits, labels and streaks. TRAIL_SECONDS explains the streaks. */
+  _syncMoons(viewpoint, labelDeg) {
+    const [toPlanet, pole, third] = this._axes;
+    for (const m of this.moons) {
+      const centre = this.positions[m.parent];
+      const o = m.orbitNow;
+      const { p, q } = o;
+      const laps = this._moonRate * m.lapsPerDay; // per real second
+
+      // All twenty are tidally locked: one face to the planet, turning at the mean rate,
+      // so an eccentric orbit shows its libration. That face is the map's prime meridian.
+      const cm = Math.cos(o.M), sm = Math.sin(o.M);
+      toPlanet.set(-(p.x * cm + q.x * sm), -(p.y * cm + q.y * sm), -(p.z * cm + q.z * sm));
+      pole.set(p.y * q.z - p.z * q.y, p.z * q.x - p.x * q.z, p.x * q.y - p.y * q.x);
+      third.crossVectors(toPlanet, pole);
+      m.mesh.position.copy(m.position);
+      m.mesh.quaternion.setFromRotationMatrix(this._basis.makeBasis(toPlanet, pole, third));
+      m.mesh.visible = laps <= MAX_FOLLOW_HZ;
+
+      const away = this._vec.copy(centre).sub(viewpoint).length();
+      const near = THREE.MathUtils.smoothstep(
+        this._moonReach[m.parent] / Math.max(away, 1e-6), MOON_NEAR[0], MOON_NEAR[1]);
+
+      const readable = 1 - THREE.MathUtils.smoothstep(laps, LABEL_FADE_HZ[0], LABEL_FADE_HZ[1]);
+      const ink = 0.85 * near * readable;
+      m.labelSprite.visible = this._decor && ink > 0.01;
+      if (m.labelSprite.visible) {
+        const d = this._vec.copy(m.position).sub(viewpoint).length();
+        // Never smaller than this up close, and smaller beside Mars than beside Jupiter.
+        const ls = Math.max(angularSize(d, labelDeg), 0.1 + 0.1 * this.objects[m.parent].radius);
+        m.labelSprite.material.opacity = ink;
+        m.labelSprite.scale.set(ls * m.labelAspect, ls, 1);
+        m.labelSprite.position.copy(m.position);
+        m.labelSprite.position.y += m.radius + angularSize(d, labelDeg * 0.6);
+        if (this.billboard === 'cylindrical') aimYawOnly(m.labelSprite, viewpoint);
+      }
+
+      // Radians of orbit covered in TRAIL_SECONDS, capped at one lap.
+      const sweep = Math.min(TAU, laps * TRAIL_SECONDS * TAU);
+      const showOrbit = this._decor && near > 0.01;
+      const showTrail = near > 0.01 && sweep * m.axis > m.radius;
+      m.orbit.visible = showOrbit;
+      m.trail.visible = showTrail;
+      if (!showOrbit && !showTrail) continue;
+
+      // Carries the unit circle (cos E, sin E, 0) onto the ellipse about the planet.
+      const minor = m.axis * Math.sqrt(1 - o.e * o.e);
+      const focus = o.e * m.axis;
+      this._basis.set(
+        p.x * m.axis, q.x * minor, pole.x * m.axis, centre.x - focus * p.x,
+        p.y * m.axis, q.y * minor, pole.y * m.axis, centre.y - focus * p.y,
+        p.z * m.axis, q.z * minor, pole.z * m.axis, centre.z - focus * p.z,
+        0, 0, 0, 1
+      );
+      if (showOrbit) {
+        m.orbit.material.opacity = 0.3 * near;
+        m.orbit.matrix.copy(this._basis);
+        m.orbit.matrixWorldNeedsUpdate = true;
+      }
+      if (showTrail) {
+        const position = m.trail.geometry.attributes.position;
+        const color = m.trail.geometry.attributes.color;
+        // A streak fades from the moon back along its path; a lapped orbit glows evenly,
+        // or the ring would flicker with wherever the moon happened to be this frame.
+        const even = THREE.MathUtils.smoothstep(sweep, Math.PI, TAU);
+        for (let k = 0; k < TRAIL_POINTS; k++) {
+          const u = k / (TRAIL_POINTS - 1);
+          const E = o.E - sweep * u;
+          const glow = (1 - u * (1 - even)) ** 2 * (1 - 0.5 * even);
+          position.setXYZ(k, Math.cos(E), Math.sin(E), 0);
+          color.setXYZ(k, m.tint.r * glow, m.tint.g * glow, m.tint.b * glow);
+        }
+        position.needsUpdate = true;
+        color.needsUpdate = true;
+        m.trail.material.opacity = 0.75 * near;
+        m.trail.matrix.copy(this._basis);
+        m.trail.matrixWorldNeedsUpdate = true;
+      }
+    }
   }
 
   /** Labels and orbit lines together, since they are the same kind of annotation. */
   setDecor(on) {
+    this._decor = on; // the moons' own labels and orbits follow it in _syncMoons
     for (const o of this.objects) {
       o.labelSprite.visible = on;
       if (o.orbit) o.orbit.visible = on;

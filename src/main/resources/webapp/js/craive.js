@@ -455,6 +455,7 @@ function writeCaptureProbe() {
     earthMapped: !!(sky.objects[3].mesh.material.map && !sky.objects[3].mesh.material.map.isCanvasTexture),
     atmosphere: !!sky.atmosphere,
     milkyWay: !!sky.milkyWay,
+    moons: sky.moons.length,
     catalogStars: sky._catalogStars ? sky._catalogStars.geometry.attributes.position.count : 0,
     sphereSegs: sky.objects[0].mesh.geometry.parameters?.widthSegments ?? 0,
     sunLightOnSun: sky.sunLight.position.distanceTo(sky.objects[0].mesh.position) < 1e-4,

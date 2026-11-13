@@ -290,7 +290,7 @@ function wrapDeg(d) {
  * Solves Kepler's equation M = E - e* sin E for the eccentric anomaly, in degrees.
  * Newton's method; five iterations is far more than the planets need.
  */
-function eccentricAnomaly(M, e) {
+export function eccentricAnomaly(M, e) {
   const eStar = RAD * e;
   let E = M + eStar * Math.sin(M * DEG);
   for (let i = 0; i < 12; i++) {

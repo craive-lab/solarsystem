@@ -1,7 +1,8 @@
 # Solar System — three.js, spatial audio, and OSC
 
 A browser demo of the Sun and the eight planets on their real orbits, each singing a tone
-of its own. Click any body and the audio listener moves onto it: you hear the rest of the
+of its own, with their twenty major moons around them where they really are tonight.
+Click any body and the audio listener moves onto it: you hear the rest of the
 system from that vantage point, HRTF-panned, with the whole sound field slowly rotating
 around you as the body you are standing on travels along its orbit.
 
@@ -90,6 +91,7 @@ direction of travel, the Sun is always about 90° off one shoulder.
 |---|---|
 | click a body, or the list on the left | move the listener onto it; in flight, land on it |
 | `1`–`9` | jump to a body, or land on it |
+| hover a moon | its name, its planet and its period; a click selects the planet |
 | drag / scroll | orbit and zoom; the camera keeps tracking the selected body |
 | <kbd>↑</kbd> <kbd>↓</kbd> | take off, then fly forward and back |
 | <kbd>←</kbd> <kbd>→</kbd> | take off, then turn left and right |
@@ -157,6 +159,38 @@ number, computed with the same formula, so your patch can mirror the mix exactly
 ```
 gain = 8 / (8 + 0.85 * (max(distance, 8) - 8))
 ```
+
+
+## The moons
+
+Twenty of them: the Moon, Phobos and Deimos, the four Galilean moons, Saturn's seven from
+Mimas out to Iapetus, the five of Uranus, and Triton. That is every moon of a planet that
+is massive enough to be round, plus the two of Mars. Both views draw them, since both draw
+the same scene.
+
+They are scenery. A moon has no voice, the listener cannot stand on one, and none is in the
+OSC stream: `/ss/bodies` still announces nine bodies.
+
+A planet's moons appear as you approach it. From across the system each planet keeps its
+one beacon and label; closer in, the moons' orbits and names fade up. Select a planet to
+be taken to it, or scroll in on Earth, where the view opens from far out.
+
+Each moon is where it really is on the date shown, at every rate. Pause on any date and
+the Galilean moons are in the order a telescope would show that night, and the Moon is at
+its true phase. That has a price at speed: at the default 8 d/s the Moon rounds Earth in
+3.4 seconds, but Io laps Jupiter more than four times a second and Phobos laps Mars
+twenty-five times. So each moon trails a streak over the arc it covered in the last tenth
+of a second: a short tail on the Moon, half a ring on Io, a closed ring on Phobos. A label
+fades out once its moon passes a lap a second, and a moon past twelve laps a second is
+drawn as its ring alone. Slow the **Rate** and they resolve back into moons.
+
+All twenty keep one face to their planet, as the real ones do, turning at their mean rate
+so that an eccentric orbit shows its libration. The Moon wears NASA's Lunar Reconnaissance
+Orbiter map, with the near side toward Earth; the others have a mottled skin in their own
+colour.
+
+Where the orbits come from, and how they are drawn to fit, is under
+[Coordinates and scale](#coordinates-and-scale).
 
 
 ## The CRAIVE Lab: `?mode=craive`
@@ -517,6 +551,39 @@ arc-minutes between 1800 and 2050. Eccentricity, inclination, ascending node and
 perihelion are all included, so the orbits are genuinely elliptical and correctly oriented
 — the simulation starts at the real current date.
 
+The moons get the same treatment about their planets. Each follows a Kepler ellipse whose
+node and periapsis precess at steady rates in its own reference plane: the ecliptic for
+the Moon, and for the rest the local Laplace plane, which is the planet's equator close in
+and tips toward the planet's orbit further out. So Saturn's inner moons ride in the ring
+plane with Iapetus tilted 15° to it, the moons of Uranus stand almost upright, and Triton
+goes round backwards. A few moons carry periodic terms on top: the Sun's three largest
+pulls on the Moon, and the resonances that swing Mimas 43° and Miranda 1.4° either side of
+their mean places.
+
+The elements are in `webapp/js/moons.js`. JPL's
+[Planetary Satellite Mean Elements](https://ssd.jpl.nasa.gov/sats/elem/) table is rounded
+too far to keep a phase, so `tools/fit-moons.mjs` starts from it and fits each moon to the
+[JPL Horizons](https://ssd.jpl.nasa.gov/horizons/) ephemeris over 1975–2075. Every moon
+then lies within 0.3° of its true direction from its planet across that century, and
+eleven of them within 0.1°. As a check that borrows nothing from Horizons, the Moon stands
+0.4° from the Sun at the middle of the solar eclipse of 8 April 2024, and opposite it at
+the lunar eclipse of 7 September 2025. Outside the century the errors grow slowly.
+
+```sh
+node tools/test-moons.mjs     # checks all twenty against Horizons, offline
+node tools/fit-moons.mjs      # refits them; downloads the ephemerides the first time
+```
+
+Direction, plane, shape and timing are real; distance from the planet is not. The Moon is
+60 Earth radii out, which at the planets' enlarged sizes would be twice the gap to Venus.
+Each family is instead spread between two radii by the logarithm of its semi-major axes,
+far enough apart that neighbours never touch, clear of Saturn's rings, and clear of the
+next planet. The Moon is drawn 2.4 Earth radii out, the Galilean moons from 1.6 to 3.4
+Jupiter radii, and Saturn's seven from 2.55 to 6.5 Saturn radii. Each orbit is the true
+ellipse scaled to that size, and the moons' own sizes come from the same formula as the
+planets'. The **orbit tilt** control leaves the moons alone: they keep their real planes
+whatever the planets' are exaggerated to.
+
 Each body spins on the IAU rotation model: the real north pole direction and the real
 sidereal rate, so Uranus lies on its side, Venus and Uranus turn backwards, and Saturn's
 rings sit in its equator, edge-on in 2025. Real rates would turn Jupiter 19 times a second
@@ -735,6 +802,7 @@ src/main/resources/webapp/
   css/style.css
   css/craive.css    the CRAIVE view only, scoped to html.craive
   js/bodies.js      orbital elements, Kepler solver, synth recipes
+  js/moons.js       the twenty moons: elements, propagator, where each orbit is drawn
   js/scenery.js     the scene and the simulation, shared by both views
   js/audio.js       Web Audio graph, panners, listener, distance model
   js/oscbridge.js   osc.js transport and the bundle builder
@@ -746,6 +814,10 @@ src/main/resources/webapp/
   vendor/           three.js 0.180.0, OrbitControls, osc.js 2.4.5
 tools/
   osc-monitor.py  osc-monitor.js
+  fit-moons.mjs          fits the moons' elements to JPL Horizons
+  test-moons.mjs         checks them against moons-reference.json
+  test-band-capture.mjs  checks the CRAIVE band's mapping
+  build-stars.py         rebuilds the star catalog
 ```
 
 The vendored libraries are committed on purpose: the demo runs with no network access and
@@ -787,4 +859,6 @@ This project is released under the MIT Licence — see [LICENSE](LICENSE).
 
 three.js (MIT) and osc.js (MIT / GPL-3.0) are vendored under `webapp/vendor/` with their
 licence files. Orbital elements are from JPL/E. M. Standish, *Keplerian Elements for
-Approximate Positions of the Major Planets*.
+Approximate Positions of the Major Planets*. The moons' elements are fitted to the JPL
+Horizons satellite ephemerides, starting from JPL's *Planetary Satellite Mean Elements*.
+The maps and the star catalog are credited in `webapp/textures/README.md`.

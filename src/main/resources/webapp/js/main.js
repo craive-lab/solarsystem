@@ -14,6 +14,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/OrbitControls.js';
 import { BODIES, displayRadius, julianDate, centuries, J2000 } from './bodies.js';
+import { MOONS, moonPeriodDays } from './moons.js';
 import { SolarSystemScene } from './scenery.js';
 import { AudioEngine, computeField } from './audio.js';
 import { OscBridge } from './oscbridge.js';
@@ -187,12 +188,22 @@ const tooltip = document.getElementById('tooltip');
 let hoverPixel = null;
 let downAt = null;
 
-function pickAt(clientX, clientY) {
+/**
+ * What is under the pointer: the userData of a body's globe or beacon, or of a moon, or
+ * null. A moon carries its planet's index, so clicking one selects the planet it orbits.
+ */
+function hitAt(clientX, clientY) {
   pointer.x = (clientX / window.innerWidth) * 2 - 1;
   pointer.y = -(clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects(pickables, false);
-  return hits.length ? hits[0].object.userData.index : -1;
+  // The raycaster does not care what is drawn, and a moon too fast to follow is not.
+  const hit = raycaster.intersectObjects(pickables, false).find((h) => h.object.visible);
+  return hit ? hit.object.userData : null;
+}
+
+function pickAt(clientX, clientY) {
+  const hit = hitAt(clientX, clientY);
+  return hit ? hit.index : -1;
 }
 
 let dragAt = null;  // last pointer position of a look-around drag in flight
@@ -234,18 +245,25 @@ function setCursor(value) {
 
 function updateHover() {
   if (!hoverPixel) { tooltip.hidden = true; setCursor('grab'); return; }
-  const index = pickAt(hoverPixel.x, hoverPixel.y);
-  if (index < 0) {
+  const hit = hitAt(hoverPixel.x, hoverPixel.y);
+  if (!hit) {
     tooltip.hidden = true;
     setCursor('grab');
     return;
   }
+  const index = hit.index;
   const body = BODIES[index];
   const g = field[index];
   setCursor('pointer');
   tooltip.hidden = false;
   tooltip.style.left = hoverPixel.x + 'px';
   tooltip.style.top = hoverPixel.y + 'px';
+  if (hit.moon !== undefined) {
+    const moon = MOONS[hit.moon];
+    const days = moonPeriodDays(moon);
+    tooltip.textContent = `${moon.name} · moon of ${body.name} · ${days.toFixed(days < 10 ? 2 : 1)} day orbit`;
+    return;
+  }
   tooltip.textContent = index === state.listener
     ? `${body.name} · you are here`
     : `${body.name} · ${body.sound.note} · az ${g.azimuth.toFixed(0)}° · ${(g.gain * 100).toFixed(0)}%`;
@@ -442,7 +460,14 @@ renderer.setAnimationLoop(tick);
 try {
   if (new URLSearchParams(location.search).get('test') === 'quality') {
     sky.ready.then(() => {
+      // The Moon keeps the middle of its map toward Earth, give or take its libration.
+      const luna = sky.moons[0];
+      const nearSide = new THREE.Vector3(1, 0, 0).applyQuaternion(luna.mesh.quaternion);
+      const toEarth = positions[luna.parent].clone().sub(luna.position).normalize();
       const result = {
+        moons: sky.moons.length,
+        moonMapped: !luna.mesh.material.map.isCanvasTexture,
+        moonNearSideDot: Number(nearSide.dot(toEarth).toFixed(4)),
         quality: sky.quality,
         earthMapped: !!(sky.objects[3].mesh.material.map && !sky.objects[3].mesh.material.map.isCanvasTexture),
         atmosphere: !!sky.atmosphere,
